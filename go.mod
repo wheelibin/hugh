@@ -3,21 +3,17 @@ module github.com/wheelibin/hugh
 go 1.20
 
 require (
-	github.com/charmbracelet/bubbles v0.16.1
-	github.com/charmbracelet/bubbletea v0.24.2
-	github.com/charmbracelet/lipgloss v0.7.1
 	github.com/charmbracelet/log v0.2.2
 	github.com/nathan-osman/go-sunrise v1.1.0
 	github.com/r3labs/sse/v2 v2.10.0
 	github.com/samber/lo v1.38.1
-	go.uber.org/zap v1.24.0
-	golang.org/x/term v0.9.0
-	gopkg.in/natefinch/lumberjack.v2 v2.2.1
+	github.com/spf13/viper v1.16.0
 )
 
 require (
 	github.com/76creates/stickers v1.3.0 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
+	github.com/charmbracelet/lipgloss v0.7.1 // indirect
 	github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
@@ -38,7 +34,6 @@ require (
 	github.com/spf13/cast v1.5.1 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/spf13/viper v1.16.0 // indirect
 	github.com/subosito/gotenv v1.4.2 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect

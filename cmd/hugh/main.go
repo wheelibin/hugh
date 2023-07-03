@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 
@@ -8,56 +9,39 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/wheelibin/hugh/internal/config"
-
+	"github.com/wheelibin/hugh/internal/hue"
 	"github.com/wheelibin/hugh/internal/lights"
 	"github.com/wheelibin/hugh/internal/schedule"
-	"github.com/wheelibin/hugh/internal/tui"
-	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-var cfg *config.Config
+// var cfg *config.Config
 
 func main() {
-
-	logger := log.NewWithOptions(&lumberjack.Logger{
-		Filename: "logs/hugh.log",
-		MaxAge:   3,
-	}, log.Options{
-		Level:      log.InfoLevel,
-		TimeFormat: "2006/01/02 15:04:05",
-	})
-	log.Info("hugh starting")
-
 	// read the config file
-	cfg = config.ReadConfig()
+	config.InitialiseConfig()
+
+	logger := log.NewWithOptions(os.Stderr, log.Options{
+		Level:           log.InfoLevel,
+		ReportTimestamp: true,
+		ReportCaller:    true,
+	})
+	logger.Info("hughd starting")
 
 	// create/wire up services
-	ss := schedule.NewScheduleService(*cfg, logger)
-	ls := lights.NewLightService(*cfg, logger, *ss)
+	ss := schedule.NewScheduleService(logger)
+	hs := hue.NewHueAPIService(logger)
+	ls := lights.NewLightService(logger, *ss, *hs)
 
 	stopChannel := make(chan bool, 1)
-	lightsChannel := make(chan *[]*lights.HughLight, 1)
 	quitChannel := make(chan os.Signal, 1)
 
 	// start the light update loop
-	go ls.ApplySchedule(stopChannel, lightsChannel)
-
-	// run the terminal UI
-	tui := tui.NewHughTUI()
+	go ls.ApplySchedule(stopChannel, nil)
 
 	signal.Notify(quitChannel, syscall.SIGINT, syscall.SIGTERM)
+	<-quitChannel
 
-	for {
-
-		select {
-		case ls := <-lightsChannel:
-			tui.RefreshLights(ls)
-		case <-quitChannel:
-			// cleanup before exit
-			stopChannel <- true
-			log.Info("Hugh is closing")
-			return
-		}
-	}
-
+	// cleanup before exit
+	stopChannel <- true
+	fmt.Println("Hugh is closing")
 }
