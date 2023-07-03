@@ -83,8 +83,6 @@ func (l LightService) GetAllLights() ([]*HughLight, error) {
 		})
 		if isLight {
 
-			time.Sleep(100 * time.Millisecond)
-
 			l.logger.Debug("Reading state for light...", "name", device.Metadata.Name)
 			lightState, err := l.GetLight(svcLight.RID)
 			if err != nil {
@@ -229,7 +227,6 @@ func (l LightService) UpdateLights(lights *[]*HughLight) {
 			light.Controlling = false
 			light.Reachable = true
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
 }
 
