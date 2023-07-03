@@ -4,20 +4,20 @@ import (
 	"bytes"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 
 	"github.com/charmbracelet/log"
-	"github.com/wheelibin/hugh/internal/config"
+	"github.com/spf13/viper"
 )
 
 type HueAPIService struct {
-	cfg    config.Config
 	logger *log.Logger
 }
 
-func NewHueAPIService(cfg config.Config, logger *log.Logger) *HueAPIService {
-	return &HueAPIService{cfg, logger}
+func NewHueAPIService(logger *log.Logger) *HueAPIService {
+	return &HueAPIService{logger}
 }
 
 func (h HueAPIService) GET(url string) ([]byte, error) {
@@ -31,13 +31,13 @@ func (h HueAPIService) PUT(url string, body []byte) ([]byte, error) {
 func (h HueAPIService) makeRequest(verb string, url string, body []byte) ([]byte, error) {
 
 	bodyReader := bytes.NewReader(body)
-	req, err := http.NewRequest(verb, url, bodyReader)
+	req, err := http.NewRequest(verb, fmt.Sprintf("https://%s%s", viper.GetString("bridgeIp"), url), bodyReader)
 	if err != nil {
 		return nil, err
 	}
 
 	// set headers
-	req.Header.Set("hue-application-key", h.cfg.HueAppKey)
+	req.Header.Set("hue-application-key", viper.GetString("hueApplicationKey"))
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}

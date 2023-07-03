@@ -14,9 +14,11 @@ import (
 	"github.com/wheelibin/hugh/internal/schedule"
 )
 
-var cfg *config.Config
+// var cfg *config.Config
 
 func main() {
+	// read the config file
+	config.InitialiseConfig()
 
 	logger := log.NewWithOptions(os.Stderr, log.Options{
 		Level:           log.InfoLevel,
@@ -25,13 +27,10 @@ func main() {
 	})
 	logger.Info("hughd starting")
 
-	// read the config file
-	cfg = config.ReadConfig()
-
 	// create/wire up services
-	ss := schedule.NewScheduleService(*cfg, logger)
-	hs := hue.NewHueAPIService(*cfg, logger)
-	ls := lights.NewLightService(*cfg, logger, *ss, *hs)
+	ss := schedule.NewScheduleService(logger)
+	hs := hue.NewHueAPIService(logger)
+	ls := lights.NewLightService(logger, *ss, *hs)
 
 	stopChannel := make(chan bool, 1)
 	quitChannel := make(chan os.Signal, 1)

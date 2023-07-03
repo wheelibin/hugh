@@ -11,26 +11,25 @@ import (
 	"github.com/charmbracelet/log"
 	sse "github.com/r3labs/sse/v2"
 	"github.com/samber/lo"
-	"github.com/wheelibin/hugh/internal/config"
+	"github.com/spf13/viper"
 	"github.com/wheelibin/hugh/internal/hue"
 	"github.com/wheelibin/hugh/internal/schedule"
 )
 
 type LightService struct {
-	cfg             config.Config
 	logger          *log.Logger
 	scheduleService schedule.ScheduleService
 	hueAPIService   hue.HueAPIService
 	lights          *[]*HughLight
 }
 
-func NewLightService(cfg config.Config, logger *log.Logger, scheduleService schedule.ScheduleService, hueAPIService hue.HueAPIService) *LightService {
-	return &LightService{cfg, logger, scheduleService, hueAPIService, nil}
+func NewLightService(logger *log.Logger, scheduleService schedule.ScheduleService, hueAPIService hue.HueAPIService) *LightService {
+	return &LightService{logger, scheduleService, hueAPIService, nil}
 }
 
 func (l LightService) GetLight(id string) (*HughLight, error) {
 
-	body, err := l.hueAPIService.GET(fmt.Sprintf("https://%s/clip/v2/resource/light/%s", l.cfg.BridgeIP, id))
+	body, err := l.hueAPIService.GET(fmt.Sprintf("/clip/v2/resource/light/%s", id))
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +59,7 @@ func (l LightService) GetLight(id string) (*HughLight, error) {
 
 func (l LightService) GetAllLights() ([]*HughLight, error) {
 
-	body, err := l.hueAPIService.GET(fmt.Sprintf("https://%s/clip/v2/resource/device", l.cfg.BridgeIP))
+	body, err := l.hueAPIService.GET(fmt.Sprintf("/clip/v2/resource/device"))
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +114,7 @@ func (l LightService) UpdateLight(id string, brightness int, temperature int) er
 
 	requestBody := []byte(fmt.Sprintf(`{"dimming":{"brightness":%d},"color_temperature": {"mirek": %d}}`, brightness, tempInMirek))
 
-	_, err := l.hueAPIService.PUT(fmt.Sprintf("https://%s/clip/v2/resource/light/%s", l.cfg.BridgeIP, id), requestBody)
+	_, err := l.hueAPIService.PUT(fmt.Sprintf("/clip/v2/resource/light/%s", id), requestBody)
 	if err != nil {
 		return err
 	}
@@ -236,11 +235,11 @@ func (l LightService) UpdateLights(lights *[]*HughLight) {
 
 func (l LightService) ConsumeEvents(eventChannel chan *sse.Event) {
 
-	client := sse.NewClient(fmt.Sprintf("https://%s/eventstream/clip/v2", l.cfg.BridgeIP))
+	client := sse.NewClient(fmt.Sprintf("https://%s/eventstream/clip/v2", viper.GetString("bridgeIp")))
 	client.Connection.Transport = &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
-	client.Headers["hue-application-key"] = l.cfg.HueAppKey
+	client.Headers["hue-application-key"] = viper.GetString("hueApplicationKey")
 
 	client.OnConnect(func(c *sse.Client) {
 		l.logger.Info("Connected to HUE bridge, listening for events...")

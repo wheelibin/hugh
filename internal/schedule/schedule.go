@@ -7,20 +7,40 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/nathan-osman/go-sunrise"
-	"github.com/wheelibin/hugh/internal/config"
+	"github.com/spf13/viper"
 )
 
+type Schedule struct {
+	Type           string   `json:"type"`
+	LightIds       []string `json:"lightIds"`
+	Rooms          []string `json:"rooms"`
+	Zones          []string `json:"zones"`
+	SunriseMin     string   `json:"sunriseMin"`
+	SunriseMax     string   `json:"sunriseMax"`
+	SunsetMin      string   `json:"sunsetMin"`
+	SunsetMax      string   `json:"sunsetMax"`
+	DefaultPattern struct {
+		Time        string `json:"time"`
+		Temperature int    `json:"temperature"`
+		Brightness  int    `json:"brightness"`
+	} `json:"defaultPattern"`
+	DayPattern []struct {
+		Time        string `json:"time"`
+		Temperature int    `json:"temperature"`
+		Brightness  int    `json:"brightness"`
+	} `json:"dayPattern"`
+}
+
 type ScheduleService struct {
-	cfg      config.Config
 	logger   *log.Logger
 	baseDate time.Time
 	sunrise  time.Time
 	sunset   time.Time
 }
 
-func NewScheduleService(cfg config.Config, logger *log.Logger) *ScheduleService {
+func NewScheduleService(logger *log.Logger) *ScheduleService {
 	baseDate := time.Now()
-	latLng := strings.Split(cfg.GeoLocation, ",")
+	latLng := strings.Split(viper.GetString("geoLocation"), ",")
 	lat, _ := strconv.ParseFloat(latLng[0], 64)
 	lng, _ := strconv.ParseFloat(latLng[1], 64)
 	sunrise, sunset := sunrise.SunriseSunset(
@@ -32,12 +52,15 @@ func NewScheduleService(cfg config.Config, logger *log.Logger) *ScheduleService 
 		"sunset", sunset.Local().Format("15:04"),
 	)
 
-	return &ScheduleService{cfg, logger, sunrise, sunset, baseDate}
+	return &ScheduleService{logger, sunrise, sunset, baseDate}
 }
 
 func (s ScheduleService) GetCurrentScheduleInterval() *Interval {
 
-	for _, schedule := range s.cfg.Schedules {
+	var schedules []Schedule
+	viper.UnmarshalKey("schedules", &schedules)
+
+	for _, schedule := range schedules {
 		if schedule.Type == "astronomical" {
 
 			sunrise := s.sunrise
