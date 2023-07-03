@@ -1,0 +1,90 @@
+{
+  "bridgeIp": "192.168.178.58",
+  "hueApplicationKey": "h9YL8D5O4eEuP-6Oe4bF146QfYWbLVR717zJKAEo",
+  "geoLocation": "53.6479,-2.3168",
+  "schedules": [
+    {
+      "type": "astronomical",
+      "lightIds": [
+        "4add238b-f997-4abe-b4b9-7fa6c95fa424"
+      ],
+      "sunriseMin": "06:00",
+      "sunriseMax": "07:00",
+      "sunsetMin": "19:00",
+      "sunsetMax": "20:00",
+      "defaultPattern": {
+        "time": "00:00",
+        "temperature": 2000,
+        "brightness": 20
+      },
+      "dayPattern": [
+        {
+          "time": "sunrise",
+          "temperature": 2000,
+          "brightness": 20
+        },
+        {
+          "time": "sunrise+1h",
+          "temperature": 4800,
+          "brightness": 100
+        },
+        {
+          "time": "sunset-1h",
+          "temperature": 4500,
+          "brightness": 80
+        },
+        {
+          "time": "sunset",
+          "temperature": 2890,
+          "brightness": 100
+        },
+        {
+          "time": "sunset+1h",
+          "temperature": 2300,
+          "brightness": 70
+        },
+        {
+          "time": "sunset+2h",
+          "temperature": 2000,
+          "brightness": 30
+        }
+      ]
+    },
+    {
+      "type": "timed",
+      "lightIds": [],
+      "dayPattern": [
+        {
+          "time": "06:00",
+          "temperature": 2000,
+          "brightness": 20
+        },
+        {
+          "time": "07:00",
+          "temperature": 4800,
+          "brightness": 100
+        },
+        {
+          "time": "19:30",
+          "temperature": 4500,
+          "brightness": 80
+        },
+        {
+          "time": "20:30",
+          "temperature": 2890,
+          "brightness": 100
+        },
+        {
+          "time": "21:30",
+          "temperature": 2300,
+          "brightness": 70
+        },
+        {
+          "time": "22:00",
+          "temperature": 2000,
+          "brightness": 30
+        }
+      ]
+    }
+  ]
+}
