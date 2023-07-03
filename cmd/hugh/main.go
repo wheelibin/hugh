@@ -14,8 +14,6 @@ import (
 	"github.com/wheelibin/hugh/internal/schedule"
 )
 
-// var cfg *config.Config
-
 func main() {
 	// read the config file
 	config.InitialiseConfig()
