@@ -55,7 +55,7 @@ func NewScheduleService(logger *log.Logger) *ScheduleService {
 	return &ScheduleService{logger, sunrise, sunset, baseDate}
 }
 
-func (s ScheduleService) GetCurrentScheduleInterval() *Interval {
+func (s ScheduleService) GetScheduleIntervalForTime(t time.Time) *Interval {
 
 	var schedules []Schedule
 	viper.UnmarshalKey("schedules", &schedules)
@@ -95,9 +95,8 @@ func (s ScheduleService) GetCurrentScheduleInterval() *Interval {
 				}
 
 				endTime := timeFromPattern(pattern.Time, sunrise, sunset)
-				now := time.Now()
 
-				if now.Compare(startTime) > -1 && now.Before(endTime) {
+				if t.Compare(startTime) > -1 && t.Before(endTime) {
 					// we are in this day pattern
 					currentInterval := Interval{
 						Start: IntervalStep{startTime, float32(startPattern.Brightness), startPattern.Temperature},

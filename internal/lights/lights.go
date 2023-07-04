@@ -21,44 +21,10 @@ type HughLight struct {
 	Reachable bool
 }
 
-type Event struct {
-	CreationTime string `json:"creationtime"`
-	Data         []struct {
-		Id string `json:"id"`
-		On *struct {
-			On bool `json:"on"`
-		} `json:"on"`
-		Dimming *struct {
-			Brightness float64 `json:"brightness"`
-		} `json:"dimming"`
-	} `json:"data"`
-	Type string `json:"type"`
-}
-
-type DeviceService struct {
-	RID   string `json:"rid"`
-	RType string `json:"rtype"`
-}
-
-type Device struct {
-	Id       string `json:"id"`
-	Metadata struct {
-		Name string `json:"name"`
-		Type string `json:"archetype"`
-	} `json:"metadata"`
-	Services []DeviceService `json:"services"`
-}
-
-type Light struct {
-	Id       string `json:"id"`
-	Metadata struct {
-		Name string `json:"name"`
-		Type string `json:"archetype"`
-	} `json:"metadata"`
-	On struct {
-		On bool `json:"on"`
-	} `json:"on"`
-	Services []DeviceService `json:"services"`
+type HughRoom struct {
+	Name string
+	// device ids of the devices in the room
+	ChildrenIds []string
 }
 
 const lightUpdateInterval = 5 * time.Second

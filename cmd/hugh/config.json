@@ -5,13 +5,15 @@
   "schedules": [
     {
       "type": "astronomical",
-      "lightIds": [
-        "4add238b-f997-4abe-b4b9-7fa6c95fa424"
+      "lightIds": [],
+      "rooms": [
+        "Office"
       ],
+      "zones": [],
       "sunriseMin": "06:00",
       "sunriseMax": "07:00",
       "sunsetMin": "19:00",
-      "sunsetMax": "20:00",
+      "sunsetMax": "21:00",
       "defaultPattern": {
         "time": "00:00",
         "temperature": 2000,

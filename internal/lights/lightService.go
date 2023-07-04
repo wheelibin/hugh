@@ -27,18 +27,14 @@ func NewLightService(logger *log.Logger, scheduleService schedule.ScheduleServic
 	return &LightService{logger, scheduleService, hueAPIService, nil}
 }
 
-func (l LightService) GetLight(id string) (*HughLight, error) {
+func (l *LightService) GetLight(id string) (*HughLight, error) {
 
 	body, err := l.hueAPIService.GET(fmt.Sprintf("/clip/v2/resource/light/%s", id))
 	if err != nil {
 		return nil, err
 	}
 
-	type LightResponse struct {
-		Errors []interface{} `json:"errors"`
-		Data   []Light       `json:"data"`
-	}
-	respBody := LightResponse{}
+	respBody := hue.LightResponse{}
 	if err := json.Unmarshal(body, &respBody); err != nil {
 		l.logger.Error(err)
 		return nil, err
@@ -57,18 +53,78 @@ func (l LightService) GetLight(id string) (*HughLight, error) {
 
 }
 
-func (l LightService) GetAllLights() ([]*HughLight, error) {
+func (l *LightService) GetAllRooms() ([]HughRoom, error) {
+
+	body, err := l.hueAPIService.GET("/clip/v2/resource/room")
+	if err != nil {
+		return nil, err
+	}
+
+	respBody := hue.RoomsResponse{}
+	if err := json.Unmarshal(body, &respBody); err != nil {
+		l.logger.Error(err)
+		return nil, err
+	}
+
+	hughRooms := lo.Map(respBody.Data, func(room hue.HueRoom, _ int) HughRoom {
+		return HughRoom{
+			Name:        room.Metadata.Name,
+			ChildrenIds: lo.Map(room.Children, func(c hue.HueDeviceService, _ int) string { return c.RID }),
+		}
+	})
+
+	return hughRooms, nil
+}
+
+func (l *LightService) GetLightsForRoom(room HughRoom) ([]*HughLight, error) {
+
+	roomLights := lo.FilterMap(room.ChildrenIds, func(deviceId string, _ int) (*HughLight, bool) {
+
+		// read the device
+		body, err := l.hueAPIService.GET(fmt.Sprintf("/clip/v2/resource/device/%s", deviceId))
+		if err != nil {
+			return nil, false
+		}
+
+		respBody := hue.DevicesResponse{}
+		if err := json.Unmarshal(body, &respBody); err != nil {
+			l.logger.Error(err)
+			return nil, false
+		}
+
+		// get the light service id
+		device := respBody.Data[0]
+		svcLight, isLight := lo.Find(device.Services, func(service hue.HueDeviceService) bool {
+			return service.RType == "light"
+		})
+
+		if !isLight {
+			return nil, false
+		}
+
+		// get the light
+		light, err := l.GetLight(svcLight.RID)
+		if err != nil {
+			l.logger.Error(err)
+			return nil, false
+		}
+
+		return light, true
+
+	})
+
+	return roomLights, nil
+
+}
+
+func (l *LightService) GetAllLights() ([]*HughLight, error) {
 
 	body, err := l.hueAPIService.GET(fmt.Sprintf("/clip/v2/resource/device"))
 	if err != nil {
 		return nil, err
 	}
 
-	type DevicesResponse struct {
-		Errors []interface{} `json:"errors"`
-		Data   []Device      `json:"data"`
-	}
-	respBody := DevicesResponse{}
+	respBody := hue.DevicesResponse{}
 	if err := json.Unmarshal(body, &respBody); err != nil {
 		l.logger.Error(err)
 		return nil, err
@@ -76,9 +132,9 @@ func (l LightService) GetAllLights() ([]*HughLight, error) {
 
 	l.logger.Info("Read devices", "total", len(respBody.Data))
 
-	lights := lo.FilterMap(respBody.Data, func(device Device, _ int) (*HughLight, bool) {
+	lights := lo.FilterMap(respBody.Data, func(device hue.HueDevice, _ int) (*HughLight, bool) {
 
-		svcLight, isLight := lo.Find(device.Services, func(service DeviceService) bool {
+		svcLight, isLight := lo.Find(device.Services, func(service hue.HueDeviceService) bool {
 			return service.RType == "light"
 		})
 		if isLight {
@@ -102,7 +158,7 @@ func (l LightService) GetAllLights() ([]*HughLight, error) {
 	return lights, nil
 }
 
-func (l LightService) UpdateLight(id string, brightness int, temperature int) error {
+func (l *LightService) UpdateLight(id string, brightness int, temperature int) error {
 
 	if temperature == 0 {
 		return nil
@@ -121,40 +177,17 @@ func (l LightService) UpdateLight(id string, brightness int, temperature int) er
 
 }
 
-func (l LightService) ApplySchedule(stopChannel <-chan bool, lightsChannel chan<- *[]*HughLight) {
+func (l *LightService) ApplySchedule(stopChannel <-chan bool, lightsChannel chan<- *[]*HughLight) {
 
 	if lightsChannel != nil {
 		defer close(lightsChannel)
 	}
 
-	var (
-		currentInterval *schedule.Interval
-	)
+	// read initial data
+	l.logger.Info("Finding rooms, zones, and lights in your system...")
+	allRooms, _ := l.GetAllRooms()
 
-	// read all lights and their initial state
-	// TODO read the lights per interval
-	l.logger.Info("Reading initial light list...")
-	lights, _ := l.GetAllLights()
-	l.logger.Info("Found lights", "total", len(lights))
-
-	updateTargets := func(t time.Time) {
-		l.logger.Info("Calculating next target states for lights...")
-		currentInterval = l.scheduleService.GetCurrentScheduleInterval()
-		if currentInterval != nil {
-
-			targetState := currentInterval.CalculateTargetLightState(t)
-			for _, light := range lights {
-				light.TargetState.Brightness = targetState.Brightness
-				light.TargetState.Temperature = targetState.Temperature
-				if !light.Reachable {
-					// try again to update previously unreachable lights
-					light.Controlling = true
-				}
-			}
-		}
-	}
-	// set target states
-	updateTargets(time.Now())
+	lights := l.UpdateLightsForSchedule(time.Now(), allRooms)
 
 	// start the update timers
 	lightUpdateTimer := time.NewTicker(lightUpdateInterval)
@@ -178,7 +211,9 @@ func (l LightService) ApplySchedule(stopChannel <-chan bool, lightsChannel chan<
 
 		case t := <-stateUpdateTimer.C:
 			l.logger.Info("Updating light targets...")
-			go updateTargets(t)
+			go func() {
+				lights = l.UpdateLightsForSchedule(t, allRooms)
+			}()
 
 		case event := <-eventChannel:
 			l.logger.Info("Received update event")
@@ -205,7 +240,45 @@ func (l LightService) ApplySchedule(stopChannel <-chan bool, lightsChannel chan<
 	}
 }
 
-func (l LightService) UpdateLights(lights *[]*HughLight) {
+func (l *LightService) UpdateLightsForSchedule(t time.Time, allRooms []HughRoom) []*HughLight {
+	l.logger.Info("Calculating next target states for lights...")
+
+	var (
+		currentInterval *schedule.Interval
+		lights          []*HughLight
+	)
+	currentInterval = l.scheduleService.GetScheduleIntervalForTime(t)
+
+	if currentInterval != nil {
+
+		// resolve schedule lights
+		l.logger.Info("Resolving lights for schedule...")
+
+		for _, roomName := range currentInterval.Rooms {
+			hughRoom, roomFound := lo.Find(allRooms, func(room HughRoom) bool { return room.Name == roomName })
+			if roomFound {
+				roomLights, _ := l.GetLightsForRoom(hughRoom)
+				lights = append(lights, roomLights...)
+			}
+		}
+		//TODO zones, individual light ids
+
+		targetState := currentInterval.CalculateTargetLightState(t)
+		for _, light := range lights {
+			light.TargetState.Brightness = targetState.Brightness
+			light.TargetState.Temperature = targetState.Temperature
+			if !light.Reachable {
+				// try again to update previously unreachable lights
+				light.Controlling = true
+			}
+		}
+	}
+
+	return lights
+}
+
+// update the specified lights to their target state
+func (l *LightService) UpdateLights(lights *[]*HughLight) {
 	for _, light := range *lights {
 
 		if !light.Controlling {
@@ -230,7 +303,7 @@ func (l LightService) UpdateLights(lights *[]*HughLight) {
 	}
 }
 
-func (l LightService) ConsumeEvents(eventChannel chan *sse.Event) {
+func (l *LightService) ConsumeEvents(eventChannel chan *sse.Event) {
 
 	client := sse.NewClient(fmt.Sprintf("https://%s/eventstream/clip/v2", viper.GetString("bridgeIp")))
 	client.Connection.Transport = &http.Transport{
@@ -246,12 +319,21 @@ func (l LightService) ConsumeEvents(eventChannel chan *sse.Event) {
 
 }
 
-func (l LightService) GetLightServideIdsForRoom(room string) ([]string, error) {
+func (l *LightService) handleReceivedEvent(event *sse.Event, lights *[]*HughLight) {
 
-	return nil, nil
-}
-
-func (l LightService) handleReceivedEvent(event *sse.Event, lights *[]*HughLight) {
+	type Event struct {
+		CreationTime string `json:"creationtime"`
+		Data         []struct {
+			Id string `json:"id"`
+			On *struct {
+				On bool `json:"on"`
+			} `json:"on"`
+			Dimming *struct {
+				Brightness float64 `json:"brightness"`
+			} `json:"dimming"`
+		} `json:"data"`
+		Type string `json:"type"`
+	}
 	events := []Event{}
 	if err := json.Unmarshal(event.Data, &events); err != nil {
 		l.logger.Error(err)
