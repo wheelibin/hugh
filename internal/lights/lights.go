@@ -21,10 +21,13 @@ type HughLight struct {
 	Reachable bool
 }
 
-type HughRoom struct {
+// represents a named group of lights (i.e a room or zone)
+type HughGroup struct {
 	Name string
 	// device ids of the devices in the room
-	ChildrenIds []string
+	DeviceIds []string
+	// light service ids in the zone
+	LightServiceIds []string
 }
 
 const lightUpdateInterval = 5 * time.Second

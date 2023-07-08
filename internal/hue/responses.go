@@ -21,7 +21,7 @@ type HueLight struct {
 	} `json:"on"`
 }
 
-type HueRoom struct {
+type HueDeviceGroup struct {
 	HueDevice
 	Children []HueDeviceService `json:"children"`
 }
@@ -36,7 +36,7 @@ type LightResponse struct {
 	Data   []HueLight    `json:"data"`
 }
 
-type RoomsResponse struct {
-	Errors []interface{} `json:"errors"`
-	Data   []HueRoom     `json:"data"`
+type GroupResponse struct {
+	Errors []interface{}    `json:"errors"`
+	Data   []HueDeviceGroup `json:"data"`
 }

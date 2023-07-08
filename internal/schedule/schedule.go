@@ -11,19 +11,17 @@ import (
 )
 
 type Schedule struct {
-	Type           string   `json:"type"`
-	LightIds       []string `json:"lightIds"`
-	Rooms          []string `json:"rooms"`
-	Zones          []string `json:"zones"`
-	SunriseMin     string   `json:"sunriseMin"`
-	SunriseMax     string   `json:"sunriseMax"`
-	SunsetMin      string   `json:"sunsetMin"`
-	SunsetMax      string   `json:"sunsetMax"`
-	DefaultPattern struct {
+	Rooms      []string `json:"rooms"`
+	Zones      []string `json:"zones"`
+	SunriseMin string   `json:"sunriseMin"`
+	SunriseMax string   `json:"sunriseMax"`
+	SunsetMin  string   `json:"sunsetMin"`
+	SunsetMax  string   `json:"sunsetMax"`
+	Default    struct {
 		Time        string `json:"time"`
 		Temperature int    `json:"temperature"`
 		Brightness  int    `json:"brightness"`
-	} `json:"defaultPattern"`
+	} `json:"default"`
 	DayPattern []struct {
 		Time        string `json:"time"`
 		Temperature int    `json:"temperature"`
@@ -55,65 +53,82 @@ func NewScheduleService(logger *log.Logger) *ScheduleService {
 	return &ScheduleService{logger, sunrise, sunset, baseDate}
 }
 
-func (s ScheduleService) GetScheduleIntervalForTime(t time.Time) *Interval {
+func (s *ScheduleService) GetScheduleIntervalForTime(t time.Time) *Interval {
 
-	var schedules []Schedule
-	viper.UnmarshalKey("schedules", &schedules)
+	var schedule Schedule
+	viper.UnmarshalKey("schedule", &schedule)
 
-	for _, schedule := range schedules {
-		if schedule.Type == "astronomical" {
+	sunrise := s.sunrise
+	sunset := s.sunset
 
-			sunrise := s.sunrise
-			sunset := s.sunset
+	// apply min/max sunrise/sunset
+	sunriseMin := timeFromConfigTimeString(schedule.SunriseMin, s.baseDate)
+	sunriseMax := timeFromConfigTimeString(schedule.SunriseMax, s.baseDate)
+	sunsetMin := timeFromConfigTimeString(schedule.SunsetMin, s.baseDate)
+	sunsetMax := timeFromConfigTimeString(schedule.SunsetMax, s.baseDate)
+	if sunrise.Before(sunriseMin) {
+		sunrise = sunriseMin
+	}
+	if sunrise.After(sunriseMax) {
+		sunrise = sunriseMax
+	}
+	if sunset.Before(sunsetMin) {
+		sunset = sunsetMin
+	}
+	if sunset.After(sunsetMax) {
+		sunset = sunsetMax
+	}
 
-			// apply min/max sunrise/sunset
-			sunriseMin := timeFromConfigTimeString(schedule.SunriseMin, s.baseDate)
-			sunriseMax := timeFromConfigTimeString(schedule.SunriseMax, s.baseDate)
-			sunsetMin := timeFromConfigTimeString(schedule.SunsetMin, s.baseDate)
-			sunsetMax := timeFromConfigTimeString(schedule.SunsetMax, s.baseDate)
-			if sunrise.Before(sunriseMin) {
-				sunrise = sunriseMin
+	numIntervals := len(schedule.DayPattern)
+
+	for i, pattern := range schedule.DayPattern {
+
+		isFirstStep := i == 0
+		isLastStep := i == numIntervals-1
+
+		startStep := schedule.Default
+		endStep := schedule.Default
+		var (
+			startTime time.Time
+			endTime   time.Time
+		)
+
+		if isFirstStep {
+			startStep = schedule.Default
+			startTime = timeFromConfigTimeString(startStep.Time, s.baseDate)
+
+			endStep = pattern
+			endTime = timeFromPattern(endStep.Time, sunrise, sunset)
+		}
+
+		if !isFirstStep && !isLastStep {
+			startStep = schedule.DayPattern[i-1]
+			startTime = timeFromPattern(startStep.Time, sunrise, sunset)
+		}
+
+		if isLastStep {
+			startStep = pattern
+			startTime = timeFromPattern(startStep.Time, sunrise, sunset)
+			endStep = schedule.Default
+			endTime = timeFromConfigTimeString(endStep.Time, s.baseDate)
+		}
+
+		if t.Compare(startTime) > -1 && t.Before(endTime) {
+			// we are in this day pattern interval
+			currentInterval := Interval{
+				Start: IntervalStep{startTime, float32(startStep.Brightness), startStep.Temperature},
+				End:   IntervalStep{endTime, float32(endStep.Brightness), endStep.Temperature},
 			}
-			if sunrise.After(sunriseMax) {
-				sunrise = sunriseMax
-			}
-			if sunset.Before(sunsetMin) {
-				sunset = sunsetMin
-			}
-			if sunset.After(sunsetMax) {
-				sunset = sunsetMax
-			}
+			s.logger.Info("The currently active pattern interval is", "from", currentInterval.Start, "to", currentInterval.End)
 
-			for i, pattern := range schedule.DayPattern {
-				// TODO handle times that lie outside the schedule
-				startPattern := schedule.DefaultPattern
-				startTime := timeFromConfigTimeString(startPattern.Time, s.baseDate)
+			currentInterval.Rooms = schedule.Rooms
+			currentInterval.Zones = schedule.Zones
 
-				if i > 0 {
-					startPattern = schedule.DayPattern[i-1]
-					startTime = timeFromPattern(startPattern.Time, sunrise, sunset)
-				}
+			return &currentInterval
 
-				endTime := timeFromPattern(pattern.Time, sunrise, sunset)
-
-				if t.Compare(startTime) > -1 && t.Before(endTime) {
-					// we are in this day pattern
-					currentInterval := Interval{
-						Start: IntervalStep{startTime, float32(startPattern.Brightness), startPattern.Temperature},
-						End:   IntervalStep{endTime, float32(pattern.Brightness), pattern.Temperature},
-					}
-					s.logger.Info("The currently active pattern interval is", "from", currentInterval.Start, "to", currentInterval.End)
-
-					currentInterval.Rooms = schedule.Rooms
-					currentInterval.Zones = schedule.Zones
-					currentInterval.LightIds = schedule.LightIds
-
-					return &currentInterval
-
-				}
-			}
 		}
 	}
+
 	return nil
 }
 

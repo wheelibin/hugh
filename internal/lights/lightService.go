@@ -53,57 +53,102 @@ func (l *LightService) GetLight(id string) (*HughLight, error) {
 
 }
 
-func (l *LightService) GetAllRooms() ([]HughRoom, error) {
+func (l *LightService) GetAllGroups() ([]HughGroup, error) {
+
+	rooms, _ := l.GetRooms()
+	zones, _ := l.GetZones()
+
+	var all []HughGroup
+	all = append(all, rooms...)
+	all = append(all, zones...)
+
+	return all, nil
+
+}
+
+func (l *LightService) GetRooms() ([]HughGroup, error) {
 
 	body, err := l.hueAPIService.GET("/clip/v2/resource/room")
 	if err != nil {
 		return nil, err
 	}
 
-	respBody := hue.RoomsResponse{}
+	respBody := hue.GroupResponse{}
 	if err := json.Unmarshal(body, &respBody); err != nil {
 		l.logger.Error(err)
 		return nil, err
 	}
 
-	hughRooms := lo.Map(respBody.Data, func(room hue.HueRoom, _ int) HughRoom {
-		return HughRoom{
-			Name:        room.Metadata.Name,
-			ChildrenIds: lo.Map(room.Children, func(c hue.HueDeviceService, _ int) string { return c.RID }),
+	hughGroups := lo.Map(respBody.Data, func(room hue.HueDeviceGroup, _ int) HughGroup {
+		return HughGroup{
+			Name:      room.Metadata.Name,
+			DeviceIds: lo.Map(room.Children, func(c hue.HueDeviceService, _ int) string { return c.RID }),
 		}
 	})
 
-	return hughRooms, nil
+	return hughGroups, nil
 }
 
-func (l *LightService) GetLightsForRoom(room HughRoom) ([]*HughLight, error) {
+func (l *LightService) GetZones() ([]HughGroup, error) {
 
-	roomLights := lo.FilterMap(room.ChildrenIds, func(deviceId string, _ int) (*HughLight, bool) {
+	body, err := l.hueAPIService.GET("/clip/v2/resource/zone")
+	if err != nil {
+		return nil, err
+	}
 
-		// read the device
-		body, err := l.hueAPIService.GET(fmt.Sprintf("/clip/v2/resource/device/%s", deviceId))
-		if err != nil {
-			return nil, false
+	respBody := hue.GroupResponse{}
+	if err := json.Unmarshal(body, &respBody); err != nil {
+		l.logger.Error(err)
+		return nil, err
+	}
+
+	hughGroups := lo.Map(respBody.Data, func(zone hue.HueDeviceGroup, _ int) HughGroup {
+		return HughGroup{
+			Name:            zone.Metadata.Name,
+			LightServiceIds: lo.Map(zone.Children, func(c hue.HueDeviceService, _ int) string { return c.RID }),
 		}
+	})
 
-		respBody := hue.DevicesResponse{}
-		if err := json.Unmarshal(body, &respBody); err != nil {
-			l.logger.Error(err)
-			return nil, false
+	return hughGroups, nil
+}
+
+func (l *LightService) GetLightsForGroup(room HughGroup) ([]*HughLight, error) {
+
+	var lightServiceIds []string
+
+	if len(room.LightServiceIds) > 0 {
+		lightServiceIds = append(lightServiceIds, room.LightServiceIds...)
+	}
+
+	if len(room.DeviceIds) > 0 {
+		for _, deviceId := range room.DeviceIds {
+			// read the device
+			body, err := l.hueAPIService.GET(fmt.Sprintf("/clip/v2/resource/device/%s", deviceId))
+			if err != nil {
+				l.logger.Warnf("Unable to read device with id %s", deviceId)
+			}
+
+			respBody := hue.DevicesResponse{}
+			if err := json.Unmarshal(body, &respBody); err != nil {
+				l.logger.Error(err)
+			}
+
+			// get the light service id
+			device := respBody.Data[0]
+			svcLight, isLight := lo.Find(device.Services, func(service hue.HueDeviceService) bool {
+				return service.RType == "light"
+			})
+
+			if isLight {
+				lightServiceIds = append(lightServiceIds, svcLight.RID)
+			}
 		}
+	}
 
-		// get the light service id
-		device := respBody.Data[0]
-		svcLight, isLight := lo.Find(device.Services, func(service hue.HueDeviceService) bool {
-			return service.RType == "light"
-		})
-
-		if !isLight {
-			return nil, false
-		}
+	groupLights := lo.FilterMap(lightServiceIds, func(lightServiceId string, _ int) (*HughLight, bool) {
 
 		// get the light
-		light, err := l.GetLight(svcLight.RID)
+		light, err := l.GetLight(lightServiceId)
 		if err != nil {
 			l.logger.Error(err)
 			return nil, false
@@ -113,7 +158,7 @@ func (l *LightService) GetLightsForRoom(room HughRoom) ([]*HughLight, error) {
 
 	})
 
-	return roomLights, nil
+	return groupLights, nil
 
 }
 
@@ -184,10 +229,10 @@ func (l *LightService) ApplySchedule(stopChannel <-chan bool, lightsChannel chan
 	}
 
 	// read initial data
-	l.logger.Info("Finding rooms, zones, and lights in your system...")
-	allRooms, _ := l.GetAllRooms()
+	l.logger.Info("Finding rooms and zones...")
+	allGroups, _ := l.GetAllGroups()
 
-	lights := l.UpdateLightsForSchedule(time.Now(), allRooms)
+	lights := l.UpdateLightsForSchedule(time.Now(), allGroups)
 
 	// start the update timers
 	lightUpdateTimer := time.NewTicker(lightUpdateInterval)
@@ -212,7 +257,7 @@ func (l *LightService) ApplySchedule(stopChannel <-chan bool, lightsChannel chan
 		case t := <-stateUpdateTimer.C:
 			l.logger.Info("Updating light targets...")
 			go func() {
-				lights = l.UpdateLightsForSchedule(t, allRooms)
+				lights = l.UpdateLightsForSchedule(t, allGroups)
 			}()
 
 		case event := <-eventChannel:
@@ -240,7 +285,7 @@ func (l *LightService) ApplySchedule(stopChannel <-chan bool, lightsChannel chan
 	}
 }
 
-func (l *LightService) UpdateLightsForSchedule(t time.Time, allRooms []HughRoom) []*HughLight {
+func (l *LightService) UpdateLightsForSchedule(t time.Time, allGroups []HughGroup) []*HughLight {
 	l.logger.Info("Calculating next target states for lights...")
 
 	var (
@@ -254,14 +299,25 @@ func (l *LightService) UpdateLightsForSchedule(t time.Time, allRooms []HughRoom)
 		// resolve schedule lights
 		l.logger.Info("Resolving lights for schedule...")
 
-		for _, roomName := range currentInterval.Rooms {
-			hughRoom, roomFound := lo.Find(allRooms, func(room HughRoom) bool { return room.Name == roomName })
-			if roomFound {
-				roomLights, _ := l.GetLightsForRoom(hughRoom)
-				lights = append(lights, roomLights...)
+		scheduleGroups := []string{}
+		scheduleGroups = append(scheduleGroups, currentInterval.Rooms...)
+		scheduleGroups = append(scheduleGroups, currentInterval.Zones...)
+
+		// get the lights for each room/zone defined in the schedule
+		for _, groupName := range scheduleGroups {
+			grp, found := lo.Find(allGroups, func(group HughGroup) bool { return group.Name == groupName })
+			if found {
+				grpLights, _ := l.GetLightsForGroup(grp)
+				lights = append(lights, grpLights...)
 			}
 		}
-		//TODO zones, individual light ids
+
+		uniqueLights := lo.UniqBy(lights, func(l *HughLight) string {
+			return l.LightServiceId
+		})
+		lights = uniqueLights
+
+		l.logger.Info("Resolved lights for current interval", "lights", lo.Map(lights, func(l *HughLight, _ int) string { return l.Name }))
 
 		targetState := currentInterval.CalculateTargetLightState(t)
 		for _, light := range lights {
