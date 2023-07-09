@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"time"
 
 	"syscall"
 
@@ -26,7 +27,7 @@ func main() {
 	logger.Info("hughd starting")
 
 	// create/wire up services
-	ss := schedule.NewScheduleService(logger)
+	ss := schedule.NewScheduleService(logger, time.Now())
 	hs := hue.NewHueAPIService(logger)
 	ls := lights.NewLightService(logger, *ss, *hs)
 
@@ -34,7 +35,7 @@ func main() {
 	quitChannel := make(chan os.Signal, 1)
 
 	// start the light update loop
-	go ls.ApplySchedule(stopChannel, nil)
+	go ls.ApplySchedules(stopChannel)
 
 	signal.Notify(quitChannel, syscall.SIGINT, syscall.SIGTERM)
 	<-quitChannel

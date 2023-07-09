@@ -2,53 +2,55 @@
   "bridgeIp": "192.168.178.58",
   "hueApplicationKey": "h9YL8D5O4eEuP-6Oe4bF146QfYWbLVR717zJKAEo",
   "geoLocation": "53.480759,-2.242631",
-  "schedule": {
-    "rooms": [
-      "Office"
-    ],
-    "zones": [
-      "Downstairs"
-    ],
-    "sunriseMin": "06:00",
-    "sunriseMax": "07:00",
-    "sunsetMin": "19:00",
-    "sunsetMax": "21:00",
-    "default": {
-      "time": "00:00",
-      "temperature": 2000,
-      "brightness": 20
-    },
-    "dayPattern": [
-      {
-        "time": "sunrise",
+  "schedules": [
+    {
+      "rooms": [
+        "Office"
+      ],
+      "zones": [
+        "Downstairs"
+      ],
+      "sunriseMin": "06:00",
+      "sunriseMax": "07:00",
+      "sunsetMin": "19:00",
+      "sunsetMax": "21:00",
+      "default": {
+        "time": "00:00",
         "temperature": 2000,
         "brightness": 20
       },
-      {
-        "time": "sunrise+1h",
-        "temperature": 4800,
-        "brightness": 100
-      },
-      {
-        "time": "sunset-1h",
-        "temperature": 4500,
-        "brightness": 80
-      },
-      {
-        "time": "sunset",
-        "temperature": 2890,
-        "brightness": 100
-      },
-      {
-        "time": "sunset+1h",
-        "temperature": 2300,
-        "brightness": 70
-      },
-      {
-        "time": "sunset+2h",
-        "temperature": 2000,
-        "brightness": 30
-      }
-    ]
-  }
+      "dayPattern": [
+        {
+          "time": "sunrise",
+          "temperature": 2000,
+          "brightness": 20
+        },
+        {
+          "time": "sunrise+1h",
+          "temperature": 4800,
+          "brightness": 100
+        },
+        {
+          "time": "sunset-1h",
+          "temperature": 4500,
+          "brightness": 80
+        },
+        {
+          "time": "sunset",
+          "temperature": 2890,
+          "brightness": 100
+        },
+        {
+          "time": "sunset+1h",
+          "temperature": 2300,
+          "brightness": 70
+        },
+        {
+          "time": "sunset+2h",
+          "temperature": 2000,
+          "brightness": 30
+        }
+      ]
+    }
+  ]
 }

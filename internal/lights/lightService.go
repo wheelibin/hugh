@@ -21,10 +21,12 @@ type LightService struct {
 	scheduleService schedule.ScheduleService
 	hueAPIService   hue.HueAPIService
 	lights          *[]*HughLight
+	allGroups       *[]HughGroup
 }
 
 func NewLightService(logger *log.Logger, scheduleService schedule.ScheduleService, hueAPIService hue.HueAPIService) *LightService {
-	return &LightService{logger, scheduleService, hueAPIService, nil}
+	var lights []*HughLight
+	return &LightService{logger, scheduleService, hueAPIService, &lights, nil}
 }
 
 func (l *LightService) GetLight(id string) (*HughLight, error) {
@@ -221,18 +223,56 @@ func (l *LightService) UpdateLight(id string, brightness int, temperature int) e
 	return nil
 
 }
+func (l *LightService) ResolveScheduledLights(schedules []schedule.Schedule) {
+	l.logger.Info("Resolving scheduled lights...")
 
-func (l *LightService) ApplySchedule(stopChannel <-chan bool, lightsChannel chan<- *[]*HughLight) {
-
-	if lightsChannel != nil {
-		defer close(lightsChannel)
+	scheduleGroupNames := []string{}
+	for _, schedule := range schedules {
+		scheduleGroupNames = append(scheduleGroupNames, schedule.Rooms...)
+		scheduleGroupNames = append(scheduleGroupNames, schedule.Zones...)
 	}
+	uniqueGroups := lo.Uniq(scheduleGroupNames)
+
+	lights := *l.lights
+
+	// get the lights for each room/zone defined in the schedules
+	for _, groupName := range uniqueGroups {
+		grp, found := lo.Find(*l.allGroups, func(group HughGroup) bool { return group.Name == groupName })
+		if found {
+			grpLights, _ := l.GetLightsForGroup(grp)
+			for _, grpLight := range grpLights {
+				_, lightKnown := lo.Find(*l.lights, func(l *HughLight) bool { return l.LightServiceId == grpLight.LightServiceId })
+				if !lightKnown {
+					lights = append(*l.lights, grpLight)
+				}
+			}
+
+		}
+	}
+
+	uniqueLights := lo.UniqBy(lights, func(l *HughLight) string {
+		return l.LightServiceId
+	})
+
+	l.lights = &uniqueLights
+}
+
+func (l *LightService) ApplySchedules(stopChannel <-chan bool) {
+
+	// read schedules from config
+	var schedules []schedule.Schedule
+	viper.UnmarshalKey("schedules", &schedules)
 
 	// read initial data
 	l.logger.Info("Finding rooms and zones...")
 	allGroups, _ := l.GetAllGroups()
+	l.allGroups = &allGroups
 
-	lights := l.UpdateLightsForSchedule(time.Now(), allGroups)
+	l.ResolveScheduledLights(schedules)
+
+	for _, sch := range schedules {
+		l.UpdateLightsForSchedule(sch, time.Now(), *l.allGroups)
+	}
 
 	// start the update timers
 	lightUpdateTimer := time.NewTicker(lightUpdateInterval)
@@ -257,12 +297,14 @@ func (l *LightService) ApplySchedule(stopChannel <-chan bool, lightsChannel chan
 		case t := <-stateUpdateTimer.C:
 			l.logger.Info("Updating light targets...")
 			go func() {
-				lights = l.UpdateLightsForSchedule(t, allGroups)
+				for _, sch := range schedules {
+					l.UpdateLightsForSchedule(sch, t, *l.allGroups)
+				}
 			}()
 
 		case event := <-eventChannel:
 			l.logger.Info("Received update event")
-			go l.handleReceivedEvent(event, &lights)
+			go l.handleReceivedEvent(event, l.lights)
 
 		case _ = <-lightUpdateTimer.C:
 			l.logger.Info("Setting lights to target states...")
@@ -272,55 +314,48 @@ func (l *LightService) ApplySchedule(stopChannel <-chan bool, lightsChannel chan
 
 			go func() {
 				defer wg.Done()
-				l.UpdateLights(&lights)
+				l.UpdateLights(l.lights)
 			}()
 
 			wg.Wait()
-
-			if lightsChannel != nil {
-				lightsChannel <- &lights
-			}
 
 		}
 	}
 }
 
-func (l *LightService) UpdateLightsForSchedule(t time.Time, allGroups []HughGroup) []*HughLight {
+func (l *LightService) UpdateLightsForSchedule(sch schedule.Schedule, t time.Time, allGroups []HughGroup) {
 	l.logger.Info("Calculating next target states for lights...")
 
 	var (
 		currentInterval *schedule.Interval
-		lights          []*HughLight
 	)
-	currentInterval = l.scheduleService.GetScheduleIntervalForTime(t)
+	currentInterval = l.scheduleService.GetScheduleIntervalForTime(sch, t)
 
 	if currentInterval != nil {
 
-		// resolve schedule lights
-		l.logger.Info("Resolving lights for schedule...")
-
-		scheduleGroups := []string{}
-		scheduleGroups = append(scheduleGroups, currentInterval.Rooms...)
-		scheduleGroups = append(scheduleGroups, currentInterval.Zones...)
-
-		// get the lights for each room/zone defined in the schedule
-		for _, groupName := range scheduleGroups {
-			grp, found := lo.Find(allGroups, func(group HughGroup) bool { return group.Name == groupName })
-			if found {
-				grpLights, _ := l.GetLightsForGroup(grp)
-				lights = append(lights, grpLights...)
-			}
-		}
-
-		uniqueLights := lo.UniqBy(lights, func(l *HughLight) string {
-			return l.LightServiceId
-		})
-		lights = uniqueLights
-
-		l.logger.Info("Resolved lights for current interval", "lights", lo.Map(lights, func(l *HughLight, _ int) string { return l.Name }))
+		// // resolve schedule lights
+		// l.logger.Info("Resolving lights for schedule...")
+		//
+		// scheduleGroups := []string{}
+		// scheduleGroups = append(scheduleGroups, currentInterval.Rooms...)
+		// scheduleGroups = append(scheduleGroups, currentInterval.Zones...)
+		//
+		// // get the lights for each room/zone defined in the schedule
+		// for _, groupName := range scheduleGroups {
+		// 	grp, found := lo.Find(allGroups, func(group HughGroup) bool { return group.Name == groupName })
+		// 	if found {
+		// 		grpLights, _ := l.GetLightsForGroup(grp)
+		// 		lights = append(lights, grpLights...)
+		// 	}
+		// }
+		//
+		// uniqueLights := lo.UniqBy(lights, func(l *HughLight) string {
+		// 	return l.LightServiceId
+		// })
+		// lights = uniqueLights
 
 		targetState := currentInterval.CalculateTargetLightState(t)
-		for _, light := range lights {
+		for _, light := range *l.lights {
 			light.TargetState.Brightness = targetState.Brightness
 			light.TargetState.Temperature = targetState.Temperature
 			if !light.Reachable {
@@ -330,7 +365,6 @@ func (l *LightService) UpdateLightsForSchedule(t time.Time, allGroups []HughGrou
 		}
 	}
 
-	return lights
 }
 
 // update the specified lights to their target state

@@ -36,8 +36,7 @@ type ScheduleService struct {
 	sunset   time.Time
 }
 
-func NewScheduleService(logger *log.Logger) *ScheduleService {
-	baseDate := time.Now()
+func NewScheduleService(logger *log.Logger, baseDate time.Time) *ScheduleService {
 	latLng := strings.Split(viper.GetString("geoLocation"), ",")
 	lat, _ := strconv.ParseFloat(latLng[0], 64)
 	lng, _ := strconv.ParseFloat(latLng[1], 64)
@@ -53,19 +52,16 @@ func NewScheduleService(logger *log.Logger) *ScheduleService {
 	return &ScheduleService{logger, sunrise, sunset, baseDate}
 }
 
-func (s *ScheduleService) GetScheduleIntervalForTime(t time.Time) *Interval {
-
-	var schedule Schedule
-	viper.UnmarshalKey("schedule", &schedule)
+func (s *ScheduleService) GetScheduleIntervalForTime(sch Schedule, t time.Time) *Interval {
 
 	sunrise := s.sunrise
 	sunset := s.sunset
 
 	// apply min/max sunrise/sunset
-	sunriseMin := timeFromConfigTimeString(schedule.SunriseMin, s.baseDate)
-	sunriseMax := timeFromConfigTimeString(schedule.SunriseMax, s.baseDate)
-	sunsetMin := timeFromConfigTimeString(schedule.SunsetMin, s.baseDate)
-	sunsetMax := timeFromConfigTimeString(schedule.SunsetMax, s.baseDate)
+	sunriseMin := timeFromConfigTimeString(sch.SunriseMin, s.baseDate)
+	sunriseMax := timeFromConfigTimeString(sch.SunriseMax, s.baseDate)
+	sunsetMin := timeFromConfigTimeString(sch.SunsetMin, s.baseDate)
+	sunsetMax := timeFromConfigTimeString(sch.SunsetMax, s.baseDate)
 	if sunrise.Before(sunriseMin) {
 		sunrise = sunriseMin
 	}
@@ -79,37 +75,37 @@ func (s *ScheduleService) GetScheduleIntervalForTime(t time.Time) *Interval {
 		sunset = sunsetMax
 	}
 
-	numIntervals := len(schedule.DayPattern)
+	numIntervals := len(sch.DayPattern)
 
-	for i, pattern := range schedule.DayPattern {
+	for i, pattern := range sch.DayPattern {
 
 		isFirstStep := i == 0
 		isLastStep := i == numIntervals-1
 
-		startStep := schedule.Default
-		endStep := schedule.Default
+		startStep := sch.Default
+		endStep := sch.Default
 		var (
 			startTime time.Time
 			endTime   time.Time
 		)
 
-		if isFirstStep {
-			startStep = schedule.Default
-			startTime = timeFromConfigTimeString(startStep.Time, s.baseDate)
+		endStep = pattern
+		endTime = timeFromPattern(endStep.Time, sunrise, sunset, s.baseDate)
 
-			endStep = pattern
-			endTime = timeFromPattern(endStep.Time, sunrise, sunset)
+		if isFirstStep {
+			startStep = sch.Default
+			startTime = timeFromConfigTimeString(startStep.Time, s.baseDate)
 		}
 
 		if !isFirstStep && !isLastStep {
-			startStep = schedule.DayPattern[i-1]
-			startTime = timeFromPattern(startStep.Time, sunrise, sunset)
+			startStep = sch.DayPattern[i-1]
+			startTime = timeFromPattern(startStep.Time, sunrise, sunset, s.baseDate)
 		}
 
 		if isLastStep {
 			startStep = pattern
-			startTime = timeFromPattern(startStep.Time, sunrise, sunset)
-			endStep = schedule.Default
+			startTime = timeFromPattern(startStep.Time, sunrise, sunset, s.baseDate)
+			endStep = sch.Default
 			endTime = timeFromConfigTimeString(endStep.Time, s.baseDate)
 		}
 
@@ -121,8 +117,8 @@ func (s *ScheduleService) GetScheduleIntervalForTime(t time.Time) *Interval {
 			}
 			s.logger.Info("The currently active pattern interval is", "from", currentInterval.Start, "to", currentInterval.End)
 
-			currentInterval.Rooms = schedule.Rooms
-			currentInterval.Zones = schedule.Zones
+			currentInterval.Rooms = sch.Rooms
+			currentInterval.Zones = sch.Zones
 
 			return &currentInterval
 
@@ -132,16 +128,16 @@ func (s *ScheduleService) GetScheduleIntervalForTime(t time.Time) *Interval {
 	return nil
 }
 
-func timeFromPattern(patternTime string, sunrise time.Time, sunset time.Time) time.Time {
+func timeFromPattern(patternTime string, sunrise time.Time, sunset time.Time, baseDate time.Time) time.Time {
 	var time time.Time
 	// sunrise or sunrise offset
 	if strings.Index(patternTime, "sunrise") > -1 {
-		time = timeFromAstronomicalPatternTime(patternTime, "sunrise", sunrise)
+		time = timeFromAstronomicalPatternTime(patternTime, "sunrise", sunrise, baseDate)
 	}
 
 	// sunset or sunset offset
 	if strings.Index(patternTime, "sunset") > -1 {
-		time = timeFromAstronomicalPatternTime(patternTime, "sunset", sunset)
+		time = timeFromAstronomicalPatternTime(patternTime, "sunset", sunset, baseDate)
 	}
 	return time
 }
@@ -156,7 +152,7 @@ func timeFromConfigTimeString(timeString string, baseDate time.Time) time.Time {
 }
 
 // returns an adjusted eventTime e.g ("sunset-1h", "sunset", 2023-06-27 21:43:18) -> 2023-06-27 20:43:18
-func timeFromAstronomicalPatternTime(patternTime string, event string, eventTime time.Time) time.Time {
+func timeFromAstronomicalPatternTime(patternTime string, event string, eventTime time.Time, baseDate time.Time) time.Time {
 	var result time.Time
 	if patternTime == event {
 		result = eventTime
