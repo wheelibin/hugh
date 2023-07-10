@@ -1,7 +1,6 @@
 package schedule
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"time"

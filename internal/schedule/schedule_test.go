@@ -63,7 +63,8 @@ var testSchedule = []byte(`
 
 func Test_ApplySunsetSunriseMinMax(t *testing.T) {
 
-	// combined with the base date, sunrise will be 05:59 and sunset will be 18:06
+	// with this lat/lng and base date
+	// sunrise will be 05:59 and sunset will be 18:06
 	viper.Set("geoLocation", "0,0")
 	baseDate := time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local)
 
