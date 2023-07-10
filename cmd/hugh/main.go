@@ -31,16 +31,14 @@ func main() {
 	hs := hue.NewHueAPIService(logger)
 	ls := lights.NewLightService(logger, *ss, *hs)
 
-	stopChannel := make(chan bool, 1)
 	quitChannel := make(chan os.Signal, 1)
 
 	// start the light update loop
-	go ls.ApplySchedules(stopChannel)
+	go ls.ApplySchedules(quitChannel)
 
 	signal.Notify(quitChannel, syscall.SIGINT, syscall.SIGTERM)
 	<-quitChannel
 
 	// cleanup before exit
-	stopChannel <- true
 	fmt.Println("Hugh is closing")
 }

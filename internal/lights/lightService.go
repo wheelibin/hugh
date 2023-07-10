@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -257,7 +258,7 @@ func (l *LightService) ResolveScheduledLights(schedules []schedule.Schedule) {
 	l.lights = &uniqueLights
 }
 
-func (l *LightService) ApplySchedules(stopChannel <-chan bool) {
+func (l *LightService) ApplySchedules(quitChannel <-chan os.Signal) {
 
 	// read schedules from config
 	var schedules []schedule.Schedule
@@ -288,7 +289,7 @@ func (l *LightService) ApplySchedules(stopChannel <-chan bool) {
 	// handle the timer/ticker events
 	for {
 		select {
-		case <-stopChannel:
+		case <-quitChannel:
 			l.logger.Info("ApplySchedule, stop signal received")
 			return
 		case t := <-newDayTimer:
@@ -332,27 +333,6 @@ func (l *LightService) UpdateLightsForSchedule(sch schedule.Schedule, t time.Tim
 	currentInterval = l.scheduleService.GetScheduleIntervalForTime(sch, t)
 
 	if currentInterval != nil {
-
-		// // resolve schedule lights
-		// l.logger.Info("Resolving lights for schedule...")
-		//
-		// scheduleGroups := []string{}
-		// scheduleGroups = append(scheduleGroups, currentInterval.Rooms...)
-		// scheduleGroups = append(scheduleGroups, currentInterval.Zones...)
-		//
-		// // get the lights for each room/zone defined in the schedule
-		// for _, groupName := range scheduleGroups {
-		// 	grp, found := lo.Find(allGroups, func(group HughGroup) bool { return group.Name == groupName })
-		// 	if found {
-		// 		grpLights, _ := l.GetLightsForGroup(grp)
-		// 		lights = append(lights, grpLights...)
-		// 	}
-		// }
-		//
-		// uniqueLights := lo.UniqBy(lights, func(l *HughLight) string {
-		// 	return l.LightServiceId
-		// })
-		// lights = uniqueLights
 
 		targetState := currentInterval.CalculateTargetLightState(t)
 		for _, light := range *l.lights {
