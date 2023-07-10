@@ -1,6 +1,7 @@
 package schedule
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -32,8 +33,8 @@ type Schedule struct {
 type ScheduleService struct {
 	logger   *log.Logger
 	baseDate time.Time
-	sunrise  time.Time
-	sunset   time.Time
+	Sunrise  time.Time
+	Sunset   time.Time
 }
 
 func NewScheduleService(logger *log.Logger, baseDate time.Time) *ScheduleService {
@@ -49,31 +50,36 @@ func NewScheduleService(logger *log.Logger, baseDate time.Time) *ScheduleService
 		"sunset", sunset.Local().Format("15:04"),
 	)
 
-	return &ScheduleService{logger, sunrise, sunset, baseDate}
+	return &ScheduleService{logger, baseDate, sunrise, sunset}
 }
 
-func (s *ScheduleService) GetScheduleIntervalForTime(sch Schedule, t time.Time) *Interval {
+func (s *ScheduleService) ApplySunsetSunriseMinMax(sch Schedule) {
 
-	sunrise := s.sunrise
-	sunset := s.sunset
-
-	// apply min/max sunrise/sunset
 	sunriseMin := timeFromConfigTimeString(sch.SunriseMin, s.baseDate)
 	sunriseMax := timeFromConfigTimeString(sch.SunriseMax, s.baseDate)
 	sunsetMin := timeFromConfigTimeString(sch.SunsetMin, s.baseDate)
 	sunsetMax := timeFromConfigTimeString(sch.SunsetMax, s.baseDate)
-	if sunrise.Before(sunriseMin) {
-		sunrise = sunriseMin
+
+	fmt.Println(sunriseMin, sunriseMax, s.Sunrise)
+
+	if s.Sunrise.Before(sunriseMin) {
+		s.Sunrise = sunriseMin
 	}
-	if sunrise.After(sunriseMax) {
-		sunrise = sunriseMax
+	if s.Sunrise.After(sunriseMax) {
+		s.Sunrise = sunriseMax
 	}
-	if sunset.Before(sunsetMin) {
-		sunset = sunsetMin
+	if s.Sunset.Before(sunsetMin) {
+		s.Sunset = sunsetMin
 	}
-	if sunset.After(sunsetMax) {
-		sunset = sunsetMax
+	if s.Sunset.After(sunsetMax) {
+		s.Sunset = sunsetMax
 	}
+
+}
+
+func (s *ScheduleService) GetScheduleIntervalForTime(sch Schedule, t time.Time) *Interval {
+
+	s.ApplySunsetSunriseMinMax(sch)
 
 	numIntervals := len(sch.DayPattern)
 
@@ -90,7 +96,7 @@ func (s *ScheduleService) GetScheduleIntervalForTime(sch Schedule, t time.Time) 
 		)
 
 		endStep = pattern
-		endTime = timeFromPattern(endStep.Time, sunrise, sunset, s.baseDate)
+		endTime = timeFromPattern(endStep.Time, s.Sunrise, s.Sunset, s.baseDate)
 
 		if isFirstStep {
 			startStep = sch.Default
@@ -99,12 +105,12 @@ func (s *ScheduleService) GetScheduleIntervalForTime(sch Schedule, t time.Time) 
 
 		if !isFirstStep && !isLastStep {
 			startStep = sch.DayPattern[i-1]
-			startTime = timeFromPattern(startStep.Time, sunrise, sunset, s.baseDate)
+			startTime = timeFromPattern(startStep.Time, s.Sunrise, s.Sunset, s.baseDate)
 		}
 
 		if isLastStep {
 			startStep = pattern
-			startTime = timeFromPattern(startStep.Time, sunrise, sunset, s.baseDate)
+			startTime = timeFromPattern(startStep.Time, s.Sunrise, s.Sunset, s.baseDate)
 			endStep = sch.Default
 			endTime = timeFromConfigTimeString(endStep.Time, s.baseDate)
 		}
