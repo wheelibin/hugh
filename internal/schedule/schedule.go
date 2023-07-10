@@ -60,8 +60,6 @@ func (s *ScheduleService) ApplySunsetSunriseMinMax(sch Schedule) {
 	sunsetMin := timeFromConfigTimeString(sch.SunsetMin, s.baseDate)
 	sunsetMax := timeFromConfigTimeString(sch.SunsetMax, s.baseDate)
 
-	fmt.Println(sunriseMin, sunriseMax, s.Sunrise)
-
 	if s.Sunrise.Before(sunriseMin) {
 		s.Sunrise = sunriseMin
 	}

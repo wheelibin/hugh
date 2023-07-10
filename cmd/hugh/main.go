@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"time"
@@ -40,5 +39,5 @@ func main() {
 	<-quitChannel
 
 	// cleanup before exit
-	fmt.Println("Hugh is closing")
+	logger.Info("Hugh is closing")
 }
