@@ -22,11 +22,13 @@ type Schedule struct {
 		Temperature int    `json:"temperature"`
 		Brightness  int    `json:"brightness"`
 	} `json:"default"`
-	DayPattern []struct {
-		Time        string `json:"time"`
-		Temperature int    `json:"temperature"`
-		Brightness  int    `json:"brightness"`
-	} `json:"dayPattern"`
+	DayPattern []ScheduleDayPatternStep `json:"dayPattern"`
+}
+
+type ScheduleDayPatternStep struct {
+	Time        string `json:"time"`
+	Temperature int    `json:"temperature"`
+	Brightness  int    `json:"brightness"`
 }
 
 type ScheduleService struct {
@@ -78,39 +80,30 @@ func (s *ScheduleService) GetScheduleIntervalForTime(sch Schedule, t time.Time) 
 
 	s.ApplySunsetSunriseMinMax(sch)
 
-	numIntervals := len(sch.DayPattern)
+	// numIntervals := len(sch.DayPattern)
 
-	for i, pattern := range sch.DayPattern {
+	// insert midnight->firstStep
+	if sch.DayPattern[0].Time != "startofday" {
+		sch.DayPattern = append([]ScheduleDayPatternStep{{"startofday", sch.Default.Temperature, sch.Default.Brightness}}, sch.DayPattern...)
+	}
 
-		isFirstStep := i == 0
-		isLastStep := i == numIntervals-1
+	// append lastStep->end of day
+	if sch.DayPattern[len(sch.DayPattern)-1].Time != "endofday" {
+		sch.DayPattern = append(sch.DayPattern, ScheduleDayPatternStep{"endofday", sch.Default.Temperature, sch.Default.Brightness})
+	}
 
-		startStep := sch.Default
-		endStep := sch.Default
-		var (
-			startTime time.Time
-			endTime   time.Time
-		)
+	for i, patternStep := range sch.DayPattern {
 
-		endStep = pattern
-		endTime = timeFromPattern(endStep.Time, s.Sunrise, s.Sunset, s.baseDate)
-
-		if isFirstStep {
-			startStep = sch.Default
-			startTime = timeFromConfigTimeString(startStep.Time, s.baseDate)
+		if i == len(sch.DayPattern)-1 {
+			s.logger.Errorf("error finding current interval, invalid schedule")
+			continue
 		}
 
-		if !isFirstStep && !isLastStep {
-			startStep = sch.DayPattern[i-1]
-			startTime = timeFromPattern(startStep.Time, s.Sunrise, s.Sunset, s.baseDate)
-		}
+		startStep := patternStep
+		startTime := timeFromPattern(startStep.Time, s.Sunrise, s.Sunset, s.baseDate)
 
-		if isLastStep {
-			startStep = pattern
-			startTime = timeFromPattern(startStep.Time, s.Sunrise, s.Sunset, s.baseDate)
-			endStep = sch.Default
-			endTime = timeFromConfigTimeString(endStep.Time, s.baseDate)
-		}
+		endStep := sch.DayPattern[i+1]
+		endTime := timeFromPattern(endStep.Time, s.Sunrise, s.Sunset, s.baseDate)
 
 		if t.Compare(startTime) > -1 && t.Before(endTime) {
 			// we are in this day pattern interval
@@ -132,17 +125,28 @@ func (s *ScheduleService) GetScheduleIntervalForTime(sch Schedule, t time.Time) 
 }
 
 func timeFromPattern(patternTime string, sunrise time.Time, sunset time.Time, baseDate time.Time) time.Time {
-	var time time.Time
+	var result time.Time
 	// sunrise or sunrise offset
 	if strings.Index(patternTime, "sunrise") > -1 {
-		time = timeFromAstronomicalPatternTime(patternTime, "sunrise", sunrise, baseDate)
+		result = timeFromAstronomicalPatternTime(patternTime, "sunrise", sunrise, baseDate)
 	}
 
 	// sunset or sunset offset
 	if strings.Index(patternTime, "sunset") > -1 {
-		time = timeFromAstronomicalPatternTime(patternTime, "sunset", sunset, baseDate)
+		result = timeFromAstronomicalPatternTime(patternTime, "sunset", sunset, baseDate)
 	}
-	return time
+
+	// start of day
+	if strings.Index(patternTime, "startofday") > -1 {
+		result = time.Date(baseDate.Year(), baseDate.Month(), baseDate.Day(), 0, 0, 0, 0, time.Local)
+	}
+
+	// end of day
+	if strings.Index(patternTime, "endofday") > -1 {
+		result = time.Date(baseDate.Year(), baseDate.Month(), baseDate.Day(), 23, 59, 59, 999999, time.Local)
+	}
+
+	return result
 }
 
 // returns a Time object built from the supplied time string (e.g. "06:30") and a base date
