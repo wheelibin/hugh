@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"os/signal"
-	"time"
 
 	"syscall"
 
@@ -26,7 +25,7 @@ func main() {
 	logger.Info("hughd starting")
 
 	// create/wire up services
-	ss := schedule.NewScheduleService(logger, time.Now())
+	ss := schedule.NewScheduleService(logger)
 	hs := hue.NewHueAPIService(logger)
 	ls := lights.NewLightService(logger, *ss, *hs)
 

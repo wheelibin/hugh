@@ -16,7 +16,7 @@ import (
 const timeFormat = "15:04"
 const dateTimeFormat = "2006-01-02 15:04"
 
-func Test_ApplySunsetSunriseMinMax(t *testing.T) {
+func Test_CalculateSunriseSunset(t *testing.T) {
 
 	// with this lat/lng and base date
 	// sunrise will be 05:59 and sunset will be 18:06
@@ -65,13 +65,13 @@ func Test_ApplySunsetSunriseMinMax(t *testing.T) {
 
 	for _, c := range tests {
 		t.Run(c.name, func(t *testing.T) {
-			srv := schedule.NewScheduleService(log.New(os.Stderr), baseDate)
-			srv.ApplySunsetSunriseMinMax(c.sch)
+			srv := schedule.NewScheduleService(log.New(os.Stderr))
+			sunrise, sunset, _ := srv.CalculateSunriseSunset(c.sch, baseDate)
 			if c.sunrise != "" {
-				assert.Equal(t, c.sunrise, srv.Sunrise.Format(timeFormat))
+				assert.Equal(t, c.sunrise, sunrise.Format(timeFormat))
 			}
 			if c.sunset != "" {
-				assert.Equal(t, c.sunset, srv.Sunset.Format(timeFormat))
+				assert.Equal(t, c.sunset, sunset.Format(timeFormat))
 			}
 		})
 	}
@@ -112,20 +112,20 @@ func Test_ScheduleService_GetScheduleIntervalForTime(t *testing.T) {
 	// with this lat/lng and base date
 	// sunrise will be 05:59 and sunset will be 18:06
 	viper.Set("geoLocation", "0,0")
-	baseDate := time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local)
 
+	srv := schedule.NewScheduleService(log.New(os.Stderr))
 	var sch schedule.Schedule
 	json.Unmarshal(testSchedule, &sch)
 
 	tests := []struct {
 		name      string
 		timestamp time.Time
-		interval  schedule.Interval
+		expected  schedule.Interval
 	}{
 		{
 			name:      "start of day",
 			timestamp: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local),
-			interval: schedule.Interval{Rooms: []string{}, Zones: []string{},
+			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
 				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local), Temperature: 2000, Brightness: 20},
 				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
 			},
@@ -133,7 +133,7 @@ func Test_ScheduleService_GetScheduleIntervalForTime(t *testing.T) {
 		{
 			name:      "before sunrise",
 			timestamp: time.Date(2023, 1, 1, 5, 59, 59, 999999, time.Local),
-			interval: schedule.Interval{Rooms: []string{}, Zones: []string{},
+			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
 				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local), Temperature: 2000, Brightness: 20},
 				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
 			},
@@ -141,7 +141,7 @@ func Test_ScheduleService_GetScheduleIntervalForTime(t *testing.T) {
 		{
 			name:      "sunrise",
 			timestamp: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local),
-			interval: schedule.Interval{Rooms: []string{}, Zones: []string{},
+			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
 				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
 				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
 			},
@@ -149,7 +149,7 @@ func Test_ScheduleService_GetScheduleIntervalForTime(t *testing.T) {
 		{
 			name:      "after sunrise",
 			timestamp: time.Date(2023, 1, 1, 7, 0, 0, 0, time.Local),
-			interval: schedule.Interval{Rooms: []string{}, Zones: []string{},
+			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
 				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
 				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
 			},
@@ -157,7 +157,7 @@ func Test_ScheduleService_GetScheduleIntervalForTime(t *testing.T) {
 		{
 			name:      "midday",
 			timestamp: time.Date(2023, 1, 1, 12, 0, 0, 0, time.Local),
-			interval: schedule.Interval{Rooms: []string{}, Zones: []string{},
+			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
 				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
 				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
 			},
@@ -165,7 +165,7 @@ func Test_ScheduleService_GetScheduleIntervalForTime(t *testing.T) {
 		{
 			name:      "sunset",
 			timestamp: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local),
-			interval: schedule.Interval{Rooms: []string{}, Zones: []string{},
+			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
 				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
 				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 23, 59, 59, 999999, time.Local), Temperature: 2000, Brightness: 20},
 			},
@@ -173,26 +173,33 @@ func Test_ScheduleService_GetScheduleIntervalForTime(t *testing.T) {
 		{
 			name:      "after sunset",
 			timestamp: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local),
-			interval: schedule.Interval{Rooms: []string{}, Zones: []string{},
+			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
 				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
 				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 23, 59, 59, 999999, time.Local), Temperature: 2000, Brightness: 20},
+			},
+		},
+		{
+			name:      "next day",
+			timestamp: time.Date(2023, 1, 2, 0, 0, 0, 0, time.Local),
+			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 2, 0, 0, 0, 0, time.Local), Temperature: 2000, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 2, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
 			},
 		},
 	}
 
 	for _, c := range tests {
 		t.Run(c.name, func(t *testing.T) {
-			srv := schedule.NewScheduleService(log.New(os.Stderr), baseDate)
 			interval := srv.GetScheduleIntervalForTime(sch, c.timestamp)
 			assert.NotNil(t, interval)
 
-			assert.Equal(c.interval.Start.Time.Format(dateTimeFormat), interval.Start.Time.Format(dateTimeFormat))
-			assert.Equal(c.interval.Start.Temperature, interval.Start.Temperature)
-			assert.Equal(c.interval.Start.Brightness, interval.Start.Brightness)
+			assert.Equal(c.expected.Start.Time.Format(dateTimeFormat), interval.Start.Time.Format(dateTimeFormat))
+			assert.Equal(c.expected.Start.Temperature, interval.Start.Temperature)
+			assert.Equal(c.expected.Start.Brightness, interval.Start.Brightness)
 
-			assert.Equal(c.interval.End.Time.Format(dateTimeFormat), interval.End.Time.Format(dateTimeFormat))
-			assert.Equal(c.interval.End.Temperature, interval.End.Temperature)
-			assert.Equal(c.interval.End.Brightness, interval.End.Brightness)
+			assert.Equal(c.expected.End.Time.Format(dateTimeFormat), interval.End.Time.Format(dateTimeFormat))
+			assert.Equal(c.expected.End.Temperature, interval.End.Temperature)
+			assert.Equal(c.expected.End.Brightness, interval.End.Brightness)
 
 		})
 	}
