@@ -17,7 +17,7 @@ func main() {
 	// read the config file
 	config.InitialiseConfig()
 
-	logger := log.NewWithOptions(os.Stderr, log.Options{
+	logger := log.NewWithOptions(os.Stdout, log.Options{
 		Level:           log.InfoLevel,
 		ReportTimestamp: true,
 		ReportCaller:    true,
