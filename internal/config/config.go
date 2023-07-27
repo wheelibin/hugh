@@ -9,7 +9,7 @@ import (
 
 func InitialiseConfig() {
 	viper.SetConfigName("config")
-	viper.SetConfigType("json")
+	viper.SetConfigType("yaml")
 	viper.AddConfigPath("$HOME/.config/hugh/")
 	viper.AddConfigPath("/etc/hugh/")
 	viper.AddConfigPath(".")    // optionally look for config in the working directory

@@ -1,0 +1,81 @@
+bridgeIp: 192.168.178.58
+hueApplicationKey: h9YL8D5O4eEuP-6Oe4bF146QfYWbLVR717zJKAEo
+geoLocation: 53.480759,-2.242631
+schedules:
+  - name: Downstairs
+    rooms: []
+    zones:
+      - Downstairs
+    sunriseMin: 06:00
+    sunriseMax: 07:00
+    sunsetMin: 19:00
+    sunsetMax: 21:00
+    default:
+      time: 00:00
+      temperature: 2000
+      brightness: 20
+    dayPattern:
+      - time: sunrise
+        temperature: 2000
+        brightness: 20
+      - time: sunrise+1h
+        temperature: 2890 # "read"
+        brightness: 80
+      - time: sunrise+2h
+        temperature: 4291 # "concentrate"
+        brightness: 100
+        transitionAt: 80
+      - time: sunset-2h
+        temperature: 3500
+        brightness: 100
+      - time: sunset-1h
+        temperature: 2890
+        brightness: 100
+      - time: sunset
+        temperature: 2890
+        brightness: 80
+      - time: sunset+1h
+        temperature: 2300
+        brightness: 70
+      - time: sunset+2h
+        temperature: 2000
+        brightness: 30
+  - name: Upstairs
+    rooms: []
+    zones:
+      - Upstairs
+    sunriseMin: 06:00
+    sunriseMax: 07:00
+    sunsetMin: 18:00
+    sunsetMax: 19:00
+    default:
+      time: 00:00
+      temperature: 2237
+      brightness: 0
+    dayPattern:
+      - time: sunrise
+        temperature: 2000
+        brightness: 20
+        transitionAt: 90
+      - time: sunrise+1h
+        temperature: 2890
+        brightness: 50
+        transitionAt: 90
+      - time: sunrise+2h
+        temperature: 2890
+        brightness: 100
+      - time: sunrise+3h
+        temperature: 4291
+        brightness: 100
+      - time: sunset-1h
+        temperature: 4291
+        brightness: 80
+      - time: sunset
+        temperature: 2890
+        brightness: 50
+      - time: sunset+1h
+        temperature: 2300
+        brightness: 70
+      - time: sunset+2h
+        temperature: 2000
+        brightness: 30
