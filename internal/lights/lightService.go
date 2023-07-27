@@ -4,15 +4,17 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
 	sse "github.com/r3labs/sse/v2"
 	"github.com/samber/lo"
 	"github.com/spf13/viper"
+
 	"github.com/wheelibin/hugh/internal/hue"
 	"github.com/wheelibin/hugh/internal/schedule"
 )
@@ -23,11 +25,101 @@ type LightService struct {
 	hueAPIService   hue.HueAPIService
 	lights          *[]*HughLight
 	allGroups       *[]HughGroup
+	hughScenes      *[]hue.HueScene
+	updating        bool
 }
 
 func NewLightService(logger *log.Logger, scheduleService schedule.ScheduleService, hueAPIService hue.HueAPIService) *LightService {
 	var lights []*HughLight
-	return &LightService{logger, scheduleService, hueAPIService, &lights, nil}
+	return &LightService{logger, scheduleService, hueAPIService, &lights, nil, nil, false}
+}
+
+// hugh's main update loop
+func (l *LightService) ApplySchedules(quitChannel <-chan os.Signal) {
+
+	// read schedules from config
+	var schedules []*schedule.Schedule
+	viper.UnmarshalKey("schedules", &schedules)
+
+	l.UpdateTargets(schedules, time.Now())
+
+	// start the update timers
+	lightUpdateTimer := time.NewTicker(lightUpdateInterval)
+	stateUpdateTimer := time.NewTicker(stateUpdateInterval)
+	defer lightUpdateTimer.Stop()
+	defer stateUpdateTimer.Stop()
+
+	// start listening to events
+	eventChannel := make(chan *sse.Event)
+	go l.ConsumeEvents(eventChannel)
+
+	// handle the timer/ticker events
+	for {
+		select {
+		case <-quitChannel:
+			l.logger.Info("ApplySchedule, stop signal received")
+			return
+
+		case event := <-eventChannel:
+			l.logger.Debug("Received update event")
+			go l.handleReceivedEvent(event, l.lights)
+
+		case t := <-stateUpdateTimer.C:
+			l.logger.Info("Updating light targets...")
+			l.UpdateTargets(schedules, t)
+
+		case <-lightUpdateTimer.C:
+			if !l.updating {
+				l.logger.Info("Setting lights to target states...")
+				go l.UpdateLights(l.lights)
+			}
+
+		}
+	}
+}
+
+func (l *LightService) ConsumeEvents(eventChannel chan *sse.Event) {
+
+	client := sse.NewClient(fmt.Sprintf("https://%s/eventstream/clip/v2", viper.GetString("bridgeIp")))
+	client.Connection.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client.Headers["hue-application-key"] = viper.GetString("hueApplicationKey")
+
+	client.OnConnect(func(_ *sse.Client) {
+		l.logger.Info("Connected to HUE bridge, listening for events...")
+	})
+	client.OnDisconnect(func(c *sse.Client) {
+		l.logger.Fatal("Disconnected from HUE bridge")
+	})
+
+	client.SubscribeChan("", eventChannel)
+
+}
+
+// reads the information about the system (rooms/zones/scenes) and populates the list of controllable lights
+func (l *LightService) UpdateTargets(schedules []*schedule.Schedule, timestamp time.Time) {
+	// populate rooms/groups/lights again so any newly added lights can be included
+	l.DetermineLightsToControl(schedules)
+
+	// update the targets for the lights based on the schedule
+	for _, sch := range schedules {
+		l.UpdateLightTargetsForSchedule(sch, timestamp, *l.allGroups)
+	}
+}
+
+func (l *LightService) DetermineLightsToControl(schedules []*schedule.Schedule) {
+
+	l.logger.Info("Finding rooms and zones...")
+	allGroups, _ := l.GetAllGroups()
+	l.allGroups = &allGroups
+
+	l.logger.Info("Finding Hugh scenes...")
+	hughScenes, _ := l.GetScenes()
+	l.hughScenes = &hughScenes
+
+	l.ResolveScheduledLights(schedules)
+
 }
 
 func (l *LightService) GetLight(id string) (*HughLight, error) {
@@ -45,6 +137,8 @@ func (l *LightService) GetLight(id string) (*HughLight, error) {
 
 	light := respBody.Data[0]
 	lightOn := light.On.On
+
+	l.logger.Debug("GetLight", "name", light.Metadata.Name, "on", lightOn)
 
 	return &HughLight{
 		Id:             light.Id,
@@ -67,6 +161,31 @@ func (l *LightService) GetAllGroups() ([]HughGroup, error) {
 
 	return all, nil
 
+}
+
+func (l *LightService) GetScenes() ([]hue.HueScene, error) {
+
+	body, err := l.hueAPIService.GET("/clip/v2/resource/scene")
+	if err != nil {
+		return nil, err
+	}
+
+	respBody := hue.SceneResponse{}
+	if err := json.Unmarshal(body, &respBody); err != nil {
+		l.logger.Error(err)
+		return nil, err
+	}
+
+	hughScenes := make([]hue.HueScene, 0)
+	for _, scene := range respBody.Data {
+		n := scene.Metadata.Name
+		if strings.Contains(strings.ToLower(n), "hugh") {
+			hughScenes = append(hughScenes, scene)
+			l.logger.Debug("Found Hugh scene", "name", scene.Metadata.Name)
+		}
+	}
+
+	return hughScenes, nil
 }
 
 func (l *LightService) GetRooms() ([]HughGroup, error) {
@@ -167,7 +286,7 @@ func (l *LightService) GetLightsForGroup(room HughGroup) ([]*HughLight, error) {
 
 func (l *LightService) GetAllLights() ([]*HughLight, error) {
 
-	body, err := l.hueAPIService.GET(fmt.Sprintf("/clip/v2/resource/device"))
+	body, err := l.hueAPIService.GET("/clip/v2/resource/device")
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +297,7 @@ func (l *LightService) GetAllLights() ([]*HughLight, error) {
 		return nil, err
 	}
 
-	l.logger.Info("Read devices", "total", len(respBody.Data))
+	l.logger.Debug("Read devices", "total", len(respBody.Data))
 
 	lights := lo.FilterMap(respBody.Data, func(device hue.HueDevice, _ int) (*HughLight, bool) {
 
@@ -206,15 +325,13 @@ func (l *LightService) GetAllLights() ([]*HughLight, error) {
 	return lights, nil
 }
 
-func (l *LightService) UpdateLight(id string, brightness int, temperature int) error {
+func (l *LightService) UpdateLight(id string, brightness float64, temperature int) error {
 
 	if temperature == 0 {
 		return nil
 	}
 
-	tempInMirek := 1000000 / temperature
-
-	requestBody := []byte(fmt.Sprintf(`{"dimming":{"brightness":%d},"color_temperature": {"mirek": %d}}`, brightness, tempInMirek))
+	requestBody := []byte(fmt.Sprintf(`{"dimming":{"brightness":%f},"color_temperature": {"mirek": %d}}`, brightness, temperature))
 
 	_, err := l.hueAPIService.PUT(fmt.Sprintf("/clip/v2/resource/light/%s", id), requestBody)
 	if err != nil {
@@ -224,141 +341,130 @@ func (l *LightService) UpdateLight(id string, brightness int, temperature int) e
 	return nil
 
 }
-func (l *LightService) ResolveScheduledLights(schedules []schedule.Schedule) {
+
+func (l *LightService) ResolveScheduledLights(schedules []*schedule.Schedule) {
 	l.logger.Info("Resolving scheduled lights...")
 
-	scheduleGroupNames := []string{}
 	for _, schedule := range schedules {
+
+		scheduleGroupNames := []string{}
 		scheduleGroupNames = append(scheduleGroupNames, schedule.Rooms...)
 		scheduleGroupNames = append(scheduleGroupNames, schedule.Zones...)
-	}
-	uniqueGroups := lo.Uniq(scheduleGroupNames)
 
-	lights := *l.lights
+		// get the lights for each room/zone defined in the schedules
+		for _, groupName := range scheduleGroupNames {
+			grp, found := lo.Find(*l.allGroups, func(group HughGroup) bool { return group.Name == groupName })
+			if found {
+				grpLights, _ := l.GetLightsForGroup(grp)
+				for _, grpLight := range grpLights {
 
-	// get the lights for each room/zone defined in the schedules
-	for _, groupName := range uniqueGroups {
-		grp, found := lo.Find(*l.allGroups, func(group HughGroup) bool { return group.Name == groupName })
-		if found {
-			grpLights, _ := l.GetLightsForGroup(grp)
-			for _, grpLight := range grpLights {
-				_, lightKnown := lo.Find(*l.lights, func(l *HughLight) bool { return l.LightServiceId == grpLight.LightServiceId })
-				if !lightKnown {
-					lights = append(*l.lights, grpLight)
+					// assign the light to the schedule
+					grpLight.ScheduleName = schedule.Name
+					schedule.LightServiceIds = append(schedule.LightServiceIds, grpLight.LightServiceId)
+
+					// add it
+					*l.lights = append(*l.lights, grpLight)
 				}
 			}
-
 		}
 	}
 
-	uniqueLights := lo.UniqBy(lights, func(l *HughLight) string {
+	// de-dupe
+	uniqueLights := lo.UniqBy(*l.lights, func(l *HughLight) string {
 		return l.LightServiceId
 	})
 
-	l.lights = &uniqueLights
+	*l.lights = uniqueLights
 }
 
-func (l *LightService) ApplySchedules(quitChannel <-chan os.Signal) {
+func (l *LightService) UpdateLightTargetsForSchedule(sch *schedule.Schedule, t time.Time, allGroups []HughGroup) {
+	l.logger.Infof("Calculating next target states for lights (%s)...", sch.Name)
 
-	// read schedules from config
-	var schedules []schedule.Schedule
-	viper.UnmarshalKey("schedules", &schedules)
-
-	// read initial data
-	l.logger.Info("Finding rooms and zones...")
-	allGroups, _ := l.GetAllGroups()
-	l.allGroups = &allGroups
-
-	l.ResolveScheduledLights(schedules)
-
-	for _, sch := range schedules {
-		l.UpdateLightsForSchedule(sch, time.Now(), *l.allGroups)
-	}
-
-	// start the update timers
-	lightUpdateTimer := time.NewTicker(lightUpdateInterval)
-	stateUpdateTimer := time.NewTicker(stateUpdateInterval)
-	newDayTimer := time.After(durationUntilNextDay())
-	defer lightUpdateTimer.Stop()
-	defer stateUpdateTimer.Stop()
-
-	// start listening to events
-	eventChannel := make(chan *sse.Event)
-	go l.ConsumeEvents(eventChannel)
-
-	// handle the timer/ticker events
-	for {
-		select {
-		case <-quitChannel:
-			l.logger.Info("ApplySchedule, stop signal received")
-			return
-		case t := <-newDayTimer:
-			l.logger.Info("new day has started", t)
-
-		case t := <-stateUpdateTimer.C:
-			l.logger.Info("Updating light targets...")
-			go func() {
-				for _, sch := range schedules {
-					l.UpdateLightsForSchedule(sch, t, *l.allGroups)
-				}
-			}()
-
-		case event := <-eventChannel:
-			l.logger.Info("Received update event")
-			go l.handleReceivedEvent(event, l.lights)
-
-		case _ = <-lightUpdateTimer.C:
-			l.logger.Info("Setting lights to target states...")
-
-			var wg sync.WaitGroup
-			wg.Add(1)
-
-			go func() {
-				defer wg.Done()
-				l.UpdateLights(l.lights)
-			}()
-
-			wg.Wait()
-
-		}
-	}
-}
-
-func (l *LightService) UpdateLightsForSchedule(sch schedule.Schedule, t time.Time, allGroups []HughGroup) {
-	l.logger.Info("Calculating next target states for lights...")
-
-	var (
-		currentInterval *schedule.Interval
-	)
-	currentInterval = l.scheduleService.GetScheduleIntervalForTime(sch, t)
+	currentInterval := l.scheduleService.GetScheduleIntervalForTime(sch, t)
 
 	if currentInterval != nil {
 
 		targetState := currentInterval.CalculateTargetLightState(t)
+		tempInMirek := int(math.Round(float64(1000000 / targetState.Temperature)))
+
+		// update individual lights
 		for _, light := range *l.lights {
+
+			if light.ScheduleName != sch.Name {
+				continue
+			}
+
 			light.TargetState.Brightness = targetState.Brightness
-			light.TargetState.Temperature = targetState.Temperature
+			light.TargetState.Temperature = tempInMirek
+
 			if !light.Reachable {
 				// try again to update previously unreachable lights
 				light.Controlling = true
 			}
+
+			l.logger.Debug("Target calculated for light", "name", light.Name, "temp", targetState.Temperature, "brightness", targetState.Brightness)
+		}
+
+		// update hughScenes
+		for _, scene := range *l.hughScenes {
+			sceneLightServiceIds := lo.Map(scene.Actions, func(a hue.HueSceneAction, _ int) string {
+				return a.Target.RID
+			})
+			allInSchedule := lo.Every(sch.LightServiceIds, sceneLightServiceIds)
+			if allInSchedule {
+				l.UpdateScene(scene, targetState.Brightness, tempInMirek)
+			}
 		}
 	}
+
+}
+
+func (l *LightService) UpdateScene(scene hue.HueScene, brightness float64, temperature int) error {
+
+	for _, a := range scene.Actions {
+		a.Action.On.On = true
+		a.Action.Dimming.Brightness = brightness
+		a.Action.ColorTemperature.Mirek = temperature
+	}
+
+	body := map[string]any{}
+	body["actions"] = scene.Actions
+
+	data, err := json.Marshal(body)
+
+	if err != nil {
+		l.logger.Error(err)
+		return err
+	}
+
+	_, err = l.hueAPIService.PUT(fmt.Sprintf("/clip/v2/resource/scene/%s", scene.Id), data)
+	if err != nil {
+		l.logger.Error(err)
+		return err
+	}
+
+	return nil
 
 }
 
 // update the specified lights to their target state
 func (l *LightService) UpdateLights(lights *[]*HughLight) {
+	l.updating = true
+
+	limiter := time.Tick(100 * time.Millisecond)
+
 	for _, light := range *lights {
 
+		<-limiter
+
 		if !light.Controlling {
-			l.logger.Debug("Skipping light update", "light", light.Name, "controlling", light.Controlling)
+			l.logger.Debug("Skipping light update", "light", light.Name, "Controlling", light.Controlling)
 			continue
 		}
 
-		l.logger.Info("Setting light state to target state", "light", light.Name, "brightness", light.TargetState.Brightness, "temp", light.TargetState.Temperature, "controlling", light.Controlling)
+		l.logger.Debug("Setting light state to target state", "light", light.Name, "brightness", light.TargetState.Brightness, "temp", light.TargetState.Temperature, "controlling", light.Controlling)
 
-		err := l.UpdateLight(light.LightServiceId, int(light.TargetState.Brightness), light.TargetState.Temperature)
+		err := l.UpdateLight(light.LightServiceId, light.TargetState.Brightness, light.TargetState.Temperature)
 		if err != nil {
 			if err.Error() == "unreachable" {
 				light.Controlling = false
@@ -367,43 +473,17 @@ func (l *LightService) UpdateLights(lights *[]*HughLight) {
 				l.logger.Error(err)
 			}
 		} else {
-			light.Controlling = false
+			// light update worked
 			light.Reachable = true
+			light.Controlling = true
 		}
 	}
-}
 
-func (l *LightService) ConsumeEvents(eventChannel chan *sse.Event) {
-
-	client := sse.NewClient(fmt.Sprintf("https://%s/eventstream/clip/v2", viper.GetString("bridgeIp")))
-	client.Connection.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client.Headers["hue-application-key"] = viper.GetString("hueApplicationKey")
-
-	client.OnConnect(func(c *sse.Client) {
-		l.logger.Info("Connected to HUE bridge, listening for events...")
-	})
-
-	client.SubscribeChan("", eventChannel)
-
+	l.updating = false
 }
 
 func (l *LightService) handleReceivedEvent(event *sse.Event, lights *[]*HughLight) {
 
-	type Event struct {
-		CreationTime string `json:"creationtime"`
-		Data         []struct {
-			Id string `json:"id"`
-			On *struct {
-				On bool `json:"on"`
-			} `json:"on"`
-			Dimming *struct {
-				Brightness float64 `json:"brightness"`
-			} `json:"dimming"`
-		} `json:"data"`
-		Type string `json:"type"`
-	}
 	events := []Event{}
 	if err := json.Unmarshal(event.Data, &events); err != nil {
 		l.logger.Error(err)
@@ -426,11 +506,11 @@ func (l *LightService) handleReceivedEvent(event *sse.Event, lights *[]*HughLigh
 						if !lightOn {
 							// light switched off so stop controlling
 							matchingLight.Controlling = false
-							l.logger.Infof("%s switched off", matchingLight.Name)
+							l.logger.Infof("%s was switched off", matchingLight.Name)
 						} else {
 							// light is on
 							if matchingLight.On != lightOn {
-								l.logger.Infof("%s switched on", matchingLight.Name)
+								l.logger.Infof("%s was switched on", matchingLight.Name)
 								// light just got switched on, start controlling
 								matchingLight.Controlling = true
 							}
@@ -438,11 +518,29 @@ func (l *LightService) handleReceivedEvent(event *sse.Event, lights *[]*HughLigh
 						matchingLight.On = lightOn
 					}
 
-					// light (brightness or temp) has been manually changed
+					// light (brightness or temp) has been changed
+					var updateMatchesTargetBrightness = true
+					var updateMatchesTargetTemperature = true
+
 					if eventData.Dimming != nil {
-						l.logger.Infof("%s manually changed", matchingLight.Name)
+						updateMatchesTargetBrightness = equalsFloat(eventData.Dimming.Brightness, matchingLight.TargetState.Brightness, 2)
+						// l.logger.Debug("update event", "update brightness", eventData.Dimming.Brightness, "target brightness", matchingLight.TargetState.Brightness)
+					}
+
+					if eventData.ColorTemperature != nil {
+						updateMatchesTargetTemperature = equalsInt(eventData.ColorTemperature.Mirek, matchingLight.TargetState.Temperature, 2)
+						// l.logger.Debug("update event", "update temp", eventData.ColorTemperature.Mirek, "target temp", matchingLight.TargetState.Temperature)
+					}
+
+					if updateMatchesTargetBrightness && updateMatchesTargetTemperature {
+						// the update matches the values set by hugh so ignore it
+						// l.logger.Debugf("Ignoring hugh initated change for %s", matchingLight.Name)
+					} else {
+						// light (brightness or temp) has been manually changed
+						l.logger.Debug("Detected non-hugh initated change for light, stopping controlling", "name", matchingLight.Name, "event brightness", eventData.Dimming, "event temp", eventData.ColorTemperature)
 						matchingLight.Controlling = false
 					}
+
 				}
 
 			}
@@ -450,4 +548,12 @@ func (l *LightService) handleReceivedEvent(event *sse.Event, lights *[]*HughLigh
 		}
 
 	}
+}
+
+func equalsInt(a int, b int, maxDiff int) bool {
+	return int(math.Abs(float64(a-b))) <= maxDiff
+}
+
+func equalsFloat(a float64, b float64, maxDiff int) bool {
+	return int(math.Abs(a-b)) <= maxDiff
 }

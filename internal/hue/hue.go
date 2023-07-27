@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/spf13/viper"
@@ -30,9 +29,6 @@ func (h HueAPIService) PUT(url string, body []byte) ([]byte, error) {
 }
 
 func (h HueAPIService) makeRequest(verb string, url string, body []byte) ([]byte, error) {
-
-	// simple, lazy rate limiting for the requests
-	time.Sleep(100 * time.Millisecond)
 
 	bodyReader := bytes.NewReader(body)
 	req, err := http.NewRequest(verb, fmt.Sprintf("https://%s%s", viper.GetString("bridgeIp"), url), bodyReader)

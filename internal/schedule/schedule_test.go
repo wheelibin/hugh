@@ -190,7 +190,7 @@ func Test_ScheduleService_GetScheduleIntervalForTime(t *testing.T) {
 
 	for _, c := range tests {
 		t.Run(c.name, func(t *testing.T) {
-			interval := srv.GetScheduleIntervalForTime(sch, c.timestamp)
+			interval := srv.GetScheduleIntervalForTime(&sch, c.timestamp)
 			assert.NotNil(t, interval)
 
 			assert.Equal(c.expected.Start.Time.Format(dateTimeFormat), interval.Start.Time.Format(dateTimeFormat))
@@ -201,6 +201,90 @@ func Test_ScheduleService_GetScheduleIntervalForTime(t *testing.T) {
 			assert.Equal(c.expected.End.Temperature, interval.End.Temperature)
 			assert.Equal(c.expected.End.Brightness, interval.End.Brightness)
 
+		})
+	}
+
+}
+
+func Test_TimeFromPattern(t *testing.T) {
+
+	baseDate := time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local)
+
+	tests := []struct {
+		patternTime string
+		sunrise     time.Time
+		sunset      time.Time
+		expected    time.Time
+	}{
+		// sunrise offsets
+		{
+			patternTime: "sunrise-3h",
+			sunrise:     time.Date(2023, 1, 1, 5, 59, 0, 0, time.Local),
+			sunset:      time.Date(2023, 1, 1, 18, 06, 0, 0, time.Local),
+			expected:    time.Date(2023, 1, 1, 2, 59, 0, 0, time.Local),
+		},
+		{
+			patternTime: "sunrise-1h",
+			sunrise:     time.Date(2023, 1, 1, 5, 59, 0, 0, time.Local),
+			sunset:      time.Date(2023, 1, 1, 18, 06, 0, 0, time.Local),
+			expected:    time.Date(2023, 1, 1, 4, 59, 0, 0, time.Local),
+		},
+		{
+			patternTime: "sunrise",
+			sunrise:     time.Date(2023, 1, 1, 5, 59, 0, 0, time.Local),
+			sunset:      time.Date(2023, 1, 1, 18, 06, 0, 0, time.Local),
+			expected:    time.Date(2023, 1, 1, 5, 59, 0, 0, time.Local),
+		},
+		{
+			patternTime: "sunrise+1h",
+			sunrise:     time.Date(2023, 1, 1, 5, 59, 0, 0, time.Local),
+			sunset:      time.Date(2023, 1, 1, 18, 06, 0, 0, time.Local),
+			expected:    time.Date(2023, 1, 1, 6, 59, 0, 0, time.Local),
+		},
+		{
+			patternTime: "sunrise+3h",
+			sunrise:     time.Date(2023, 1, 1, 5, 59, 0, 0, time.Local),
+			sunset:      time.Date(2023, 1, 1, 18, 06, 0, 0, time.Local),
+			expected:    time.Date(2023, 1, 1, 8, 59, 0, 0, time.Local),
+		},
+
+		// sunset offsets
+		{
+			patternTime: "sunset-3h",
+			sunrise:     time.Date(2023, 1, 1, 5, 59, 0, 0, time.Local),
+			sunset:      time.Date(2023, 1, 1, 18, 06, 0, 0, time.Local),
+			expected:    time.Date(2023, 1, 1, 15, 06, 0, 0, time.Local),
+		},
+		{
+			patternTime: "sunset-1h",
+			sunrise:     time.Date(2023, 1, 1, 5, 59, 0, 0, time.Local),
+			sunset:      time.Date(2023, 1, 1, 18, 06, 0, 0, time.Local),
+			expected:    time.Date(2023, 1, 1, 17, 06, 0, 0, time.Local),
+		},
+		{
+			patternTime: "sunset",
+			sunrise:     time.Date(2023, 1, 1, 5, 59, 0, 0, time.Local),
+			sunset:      time.Date(2023, 1, 1, 18, 06, 0, 0, time.Local),
+			expected:    time.Date(2023, 1, 1, 18, 06, 0, 0, time.Local),
+		},
+		{
+			patternTime: "sunset+1h",
+			sunrise:     time.Date(2023, 1, 1, 5, 59, 0, 0, time.Local),
+			sunset:      time.Date(2023, 1, 1, 18, 06, 0, 0, time.Local),
+			expected:    time.Date(2023, 1, 1, 19, 06, 0, 0, time.Local),
+		},
+		{
+			patternTime: "sunset+3h",
+			sunrise:     time.Date(2023, 1, 1, 5, 59, 0, 0, time.Local),
+			sunset:      time.Date(2023, 1, 1, 18, 06, 0, 0, time.Local),
+			expected:    time.Date(2023, 1, 1, 21, 06, 0, 0, time.Local),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.patternTime, func(t *testing.T) {
+			actual := schedule.TimeFromPattern(test.patternTime, test.sunrise, test.sunset, baseDate)
+			assert.Equal(t, test.expected, actual)
 		})
 	}
 
