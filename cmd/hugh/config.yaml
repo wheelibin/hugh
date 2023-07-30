@@ -2,7 +2,8 @@ bridgeIp: 192.168.178.58
 hueApplicationKey: h9YL8D5O4eEuP-6Oe4bF146QfYWbLVR717zJKAEo
 geoLocation: 53.480759,-2.242631
 schedules:
-  - name: Downstairs
+  - type: dynamic
+    name: Downstairs
     rooms: []
     zones:
       - Downstairs
@@ -40,7 +41,8 @@ schedules:
       - time: sunset+2h
         temperature: 2000
         brightness: 30
-  - name: Upstairs
+  - type: dynamic
+    name: Upstairs
     rooms: []
     zones:
       - Upstairs

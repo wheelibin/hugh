@@ -11,6 +11,7 @@ import (
 )
 
 type Schedule struct {
+	Type       string   `json:"type"`
 	Name       string   `json:"name"`
 	Rooms      []string `json:"rooms"`
 	Zones      []string `json:"zones"`
@@ -79,13 +80,6 @@ func (s *ScheduleService) CalculateSunriseSunset(sch Schedule, baseDate time.Tim
 
 func (s *ScheduleService) GetScheduleIntervalForTime(sch *Schedule, t time.Time) *Interval {
 
-	sunrise, sunset, err := s.CalculateSunriseSunset(*sch, t)
-	if err != nil {
-		s.logger.Fatal("error calculating sunrise and sunset", err.Error())
-	}
-
-	// numIntervals := len(sch.DayPattern)
-
 	// insert midnight->firstStep
 	if sch.DayPattern[0].Time != "startofday" {
 		sch.DayPattern = append([]ScheduleDayPatternStep{{"startofday", sch.Default.Temperature, sch.Default.Brightness, 0}}, sch.DayPattern...)
@@ -94,6 +88,17 @@ func (s *ScheduleService) GetScheduleIntervalForTime(sch *Schedule, t time.Time)
 	// append lastStep->end of day
 	if sch.DayPattern[len(sch.DayPattern)-1].Time != "endofday" {
 		sch.DayPattern = append(sch.DayPattern, ScheduleDayPatternStep{"endofday", sch.Default.Temperature, sch.Default.Brightness, 0})
+	}
+
+	var (
+		sunrise, sunset time.Time
+		err             error
+	)
+	if sch.Type == "dynamic" {
+		sunrise, sunset, err = s.CalculateSunriseSunset(*sch, t)
+		if err != nil {
+			s.logger.Fatal("error calculating sunrise and sunset", err.Error())
+		}
 	}
 
 	for i, patternStep := range sch.DayPattern {
@@ -129,28 +134,30 @@ func (s *ScheduleService) GetScheduleIntervalForTime(sch *Schedule, t time.Time)
 }
 
 func TimeFromPattern(patternTime string, sunrise time.Time, sunset time.Time, baseDate time.Time) time.Time {
-	var result time.Time
+
 	// sunrise or sunrise offset
 	if strings.Contains(patternTime, "sunrise") {
-		result = timeFromAstronomicalPatternTime(patternTime, "sunrise", sunrise)
+		return timeFromAstronomicalPatternTime(patternTime, "sunrise", sunrise)
 	}
 
 	// sunset or sunset offset
 	if strings.Contains(patternTime, "sunset") {
-		result = timeFromAstronomicalPatternTime(patternTime, "sunset", sunset)
+		return timeFromAstronomicalPatternTime(patternTime, "sunset", sunset)
 	}
 
 	// start of day
 	if strings.Contains(patternTime, "startofday") {
-		result = time.Date(baseDate.Year(), baseDate.Month(), baseDate.Day(), 0, 0, 0, 0, time.Local)
+		return time.Date(baseDate.Year(), baseDate.Month(), baseDate.Day(), 0, 0, 0, 0, time.Local)
 	}
 
 	// end of day
 	if strings.Contains(patternTime, "endofday") {
-		result = time.Date(baseDate.Year(), baseDate.Month(), baseDate.Day(), 23, 59, 59, 999999, time.Local)
+		return time.Date(baseDate.Year(), baseDate.Month(), baseDate.Day(), 23, 59, 59, 999999, time.Local)
 	}
 
-	return result
+	// time e.g 19:30
+	return timeFromConfigTimeString(patternTime, baseDate)
+
 }
 
 // returns a Time object built from the supplied time string (e.g. "06:30") and a base date
