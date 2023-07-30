@@ -65,7 +65,7 @@ func Test_CalculateSunriseSunset(t *testing.T) {
 
 	for _, c := range tests {
 		t.Run(c.name, func(t *testing.T) {
-			srv := schedule.NewScheduleService(log.New(os.Stderr))
+			srv := schedule.NewScheduleService(log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel}))
 			sunrise, sunset, _ := srv.CalculateSunriseSunset(c.sch, baseDate)
 			if c.sunrise != "" {
 				assert.Equal(t, c.sunrise, sunrise.Format(timeFormat))
@@ -114,7 +114,7 @@ func Test_ScheduleService_DynamicSchedule_GetScheduleIntervalForTime(t *testing.
 	// sunrise will be 05:59 and sunset will be 18:06
 	viper.Set("geoLocation", "0,0")
 
-	srv := schedule.NewScheduleService(log.New(os.Stderr))
+	srv := schedule.NewScheduleService(log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel}))
 	var sch schedule.Schedule
 	json.Unmarshal(testSchedule, &sch)
 
@@ -236,7 +236,7 @@ func Test_ScheduleService_FixedSchedule_GetScheduleIntervalForTime(t *testing.T)
   }`)
 
 	viper.Set("geoLocation", "0,0")
-	srv := schedule.NewScheduleService(log.New(os.Stderr))
+	srv := schedule.NewScheduleService(log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel}))
 	var sch schedule.Schedule
 	json.Unmarshal(testSchedule, &sch)
 
