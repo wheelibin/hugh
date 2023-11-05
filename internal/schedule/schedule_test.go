@@ -10,7 +10,9 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/wheelibin/hugh/internal/models"
 	"github.com/wheelibin/hugh/internal/schedule"
+	"github.com/wheelibin/hugh/mocks"
 )
 
 const timeFormat = "15:04"
@@ -25,47 +27,49 @@ func Test_CalculateSunriseSunset(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		sch     schedule.Schedule
+		sch     models.Schedule
 		sunrise string
 		sunset  string
 	}{
 		// sunrise
 		{
 			name:    "sunrise falls within min/max",
-			sch:     schedule.Schedule{SunriseMin: "05:00", SunriseMax: "06:00", SunsetMin: "20:00", SunsetMax: "21:00"},
+			sch:     models.Schedule{SunriseMin: "05:00", SunriseMax: "06:00", SunsetMin: "20:00", SunsetMax: "21:00"},
 			sunrise: time.Date(2023, 1, 1, 5, 59, 0, 0, time.Local).Format(timeFormat),
 		},
 		{
 			name:    "sunrise falls earlier than min",
-			sch:     schedule.Schedule{SunriseMin: "06:15", SunriseMax: "06:30", SunsetMin: "20:00", SunsetMax: "21:00"},
+			sch:     models.Schedule{SunriseMin: "06:15", SunriseMax: "06:30", SunsetMin: "20:00", SunsetMax: "21:00"},
 			sunrise: time.Date(2023, 1, 1, 6, 15, 0, 0, time.Local).Format(timeFormat),
 		},
 		{
 			name:    "sunrise falls later than max",
-			sch:     schedule.Schedule{SunriseMin: "05:00", SunriseMax: "05:30", SunsetMin: "20:00", SunsetMax: "21:00"},
+			sch:     models.Schedule{SunriseMin: "05:00", SunriseMax: "05:30", SunsetMin: "20:00", SunsetMax: "21:00"},
 			sunrise: time.Date(2023, 1, 1, 5, 30, 0, 0, time.Local).Format(timeFormat),
 		},
 		// sunset
 		{
 			name:   "sunset falls within min/max",
-			sch:    schedule.Schedule{SunriseMin: "05:00", SunriseMax: "06:00", SunsetMin: "18:00", SunsetMax: "19:00"},
+			sch:    models.Schedule{SunriseMin: "05:00", SunriseMax: "06:00", SunsetMin: "18:00", SunsetMax: "19:00"},
 			sunset: time.Date(2023, 1, 1, 18, 06, 0, 0, time.Local).Format(timeFormat),
 		},
 		{
 			name:   "sunset falls earlier than min",
-			sch:    schedule.Schedule{SunriseMin: "05:00", SunriseMax: "06:00", SunsetMin: "18:30", SunsetMax: "19:00"},
+			sch:    models.Schedule{SunriseMin: "05:00", SunriseMax: "06:00", SunsetMin: "18:30", SunsetMax: "19:00"},
 			sunset: time.Date(2023, 1, 1, 18, 30, 0, 0, time.Local).Format(timeFormat),
 		},
 		{
 			name:   "sunset falls later than max",
-			sch:    schedule.Schedule{SunriseMin: "05:00", SunriseMax: "06:00", SunsetMin: "17:00", SunsetMax: "18:00"},
+			sch:    models.Schedule{SunriseMin: "05:00", SunriseMax: "06:00", SunsetMin: "17:00", SunsetMax: "18:00"},
 			sunset: time.Date(2023, 1, 1, 18, 00, 0, 0, time.Local).Format(timeFormat),
 		},
 	}
 
+	mockLightRepo := mocks.NewMocklightRepo(t)
+
 	for _, c := range tests {
 		t.Run(c.name, func(t *testing.T) {
-			srv := schedule.NewScheduleService(log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel}))
+			srv := schedule.NewScheduleService(log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel}), mockLightRepo)
 			sunrise, sunset, _ := srv.CalculateSunriseSunset(c.sch, baseDate)
 			if c.sunrise != "" {
 				assert.Equal(t, c.sunrise, sunrise.Format(timeFormat))
@@ -103,6 +107,10 @@ func Test_ScheduleService_DynamicSchedule_GetScheduleIntervalForTime(t *testing.
         "brightness": 20
       },
       {
+        "time": "13:00",
+        "off": true
+      },
+      {
         "time": "sunset",
         "temperature": 2890,
         "brightness": 100
@@ -114,9 +122,11 @@ func Test_ScheduleService_DynamicSchedule_GetScheduleIntervalForTime(t *testing.
 	// sunrise will be 05:59 and sunset will be 18:06
 	viper.Set("geoLocation", "0,0")
 
-	srv := schedule.NewScheduleService(log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel}))
-	var sch schedule.Schedule
-	json.Unmarshal(testSchedule, &sch)
+	mockLightRepo := mocks.NewMocklightRepo(t)
+
+	srv := schedule.NewScheduleService(log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel}), mockLightRepo)
+	var sch models.Schedule
+	_ = json.Unmarshal(testSchedule, &sch)
 
 	tests := []struct {
 		name      string
@@ -127,64 +137,71 @@ func Test_ScheduleService_DynamicSchedule_GetScheduleIntervalForTime(t *testing.
 			name:      "start of day",
 			timestamp: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local), Temperature: 2000, Brightness: 20},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local), TemperatureKelvin: 2000, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), TemperatureKelvin: 2500, Brightness: 20},
 			},
 		},
 		{
 			name:      "before sunrise",
 			timestamp: time.Date(2023, 1, 1, 5, 59, 59, 999999, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local), Temperature: 2000, Brightness: 20},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local), TemperatureKelvin: 2000, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), TemperatureKelvin: 2500, Brightness: 20},
 			},
 		},
 		{
 			name:      "sunrise",
 			timestamp: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), TemperatureKelvin: 2500, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 13, 0, 0, 0, time.Local), TemperatureKelvin: 0, Brightness: 0, Off: true},
 			},
 		},
 		{
 			name:      "after sunrise",
 			timestamp: time.Date(2023, 1, 1, 7, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), TemperatureKelvin: 2500, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 13, 0, 0, 0, time.Local), TemperatureKelvin: 0, Brightness: 0, Off: true},
 			},
 		},
 		{
 			name:      "midday",
 			timestamp: time.Date(2023, 1, 1, 12, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), TemperatureKelvin: 2500, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 13, 0, 0, 0, time.Local), TemperatureKelvin: 0, Brightness: 0, Off: true},
+			},
+		}, {
+			name:      "fixed time",
+			timestamp: time.Date(2023, 1, 1, 13, 15, 0, 0, time.Local),
+			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 13, 0, 0, 0, time.Local), TemperatureKelvin: 0, Brightness: 0, Off: true},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), TemperatureKelvin: 2890, Brightness: 100},
 			},
 		},
 		{
 			name:      "sunset",
 			timestamp: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 23, 59, 59, 999999, time.Local), Temperature: 2000, Brightness: 20},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), TemperatureKelvin: 2890, Brightness: 100},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 23, 59, 59, 999999, time.Local), TemperatureKelvin: 2000, Brightness: 20},
 			},
 		},
 		{
 			name:      "after sunset",
 			timestamp: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 23, 59, 59, 999999, time.Local), Temperature: 2000, Brightness: 20},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 19, 0, 0, 0, time.Local), TemperatureKelvin: 2890, Brightness: 100},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 23, 59, 59, 999999, time.Local), TemperatureKelvin: 2000, Brightness: 20},
 			},
 		},
 		{
 			name:      "next day",
 			timestamp: time.Date(2023, 1, 2, 0, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 2, 0, 0, 0, 0, time.Local), Temperature: 2000, Brightness: 20},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 2, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 2, 0, 0, 0, 0, time.Local), TemperatureKelvin: 2000, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 2, 6, 0, 0, 0, time.Local), TemperatureKelvin: 2500, Brightness: 20},
 			},
 		},
 	}
@@ -194,13 +211,13 @@ func Test_ScheduleService_DynamicSchedule_GetScheduleIntervalForTime(t *testing.
 			interval := srv.GetScheduleIntervalForTime(&sch, c.timestamp)
 			assert.NotNil(t, interval)
 
-			assert.Equal(c.expected.Start.Time.Format(dateTimeFormat), interval.Start.Time.Format(dateTimeFormat))
-			assert.Equal(c.expected.Start.Temperature, interval.Start.Temperature)
-			assert.Equal(c.expected.Start.Brightness, interval.Start.Brightness)
+			assert.Equal(c.expected.Start.Time.Format(dateTimeFormat), interval.Start.Time.Format(dateTimeFormat), c.name)
+			assert.Equal(c.expected.Start.TemperatureKelvin, interval.Start.TemperatureKelvin, c.name)
+			assert.Equal(c.expected.Start.Brightness, interval.Start.Brightness, c.name)
 
-			assert.Equal(c.expected.End.Time.Format(dateTimeFormat), interval.End.Time.Format(dateTimeFormat))
-			assert.Equal(c.expected.End.Temperature, interval.End.Temperature)
-			assert.Equal(c.expected.End.Brightness, interval.End.Brightness)
+			assert.Equal(c.expected.End.Time.Format(dateTimeFormat), interval.End.Time.Format(dateTimeFormat), c.name)
+			assert.Equal(c.expected.End.TemperatureKelvin, interval.End.TemperatureKelvin, c.name)
+			assert.Equal(c.expected.End.Brightness, interval.End.Brightness, c.name)
 
 		})
 	}
@@ -236,9 +253,10 @@ func Test_ScheduleService_FixedSchedule_GetScheduleIntervalForTime(t *testing.T)
   }`)
 
 	viper.Set("geoLocation", "0,0")
-	srv := schedule.NewScheduleService(log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel}))
-	var sch schedule.Schedule
-	json.Unmarshal(testSchedule, &sch)
+	mockLightRepo := mocks.NewMocklightRepo(t)
+	srv := schedule.NewScheduleService(log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel}), mockLightRepo)
+	var sch models.Schedule
+	_ = json.Unmarshal(testSchedule, &sch)
 
 	tests := []struct {
 		name      string
@@ -249,64 +267,64 @@ func Test_ScheduleService_FixedSchedule_GetScheduleIntervalForTime(t *testing.T)
 			name:      "start of day",
 			timestamp: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local), Temperature: 2000, Brightness: 20},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local), TemperatureKelvin: 2000, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), TemperatureKelvin: 2500, Brightness: 20},
 			},
 		},
 		{
 			name:      "before step 1",
 			timestamp: time.Date(2023, 1, 1, 5, 59, 59, 999999, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local), Temperature: 2000, Brightness: 20},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local), TemperatureKelvin: 2000, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), TemperatureKelvin: 2500, Brightness: 20},
 			},
 		},
 		{
 			name:      "at step 1",
 			timestamp: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), TemperatureKelvin: 2500, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local), TemperatureKelvin: 2890, Brightness: 100},
 			},
 		},
 		{
 			name:      "after step 1",
 			timestamp: time.Date(2023, 1, 1, 7, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), TemperatureKelvin: 2500, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local), TemperatureKelvin: 2890, Brightness: 100},
 			},
 		},
 		{
 			name:      "midday",
 			timestamp: time.Date(2023, 1, 1, 12, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 6, 0, 0, 0, time.Local), TemperatureKelvin: 2500, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local), TemperatureKelvin: 2890, Brightness: 100},
 			},
 		},
 		{
 			name:      "step 2",
 			timestamp: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 23, 59, 59, 999999, time.Local), Temperature: 2000, Brightness: 20},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local), TemperatureKelvin: 2890, Brightness: 100},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 23, 59, 59, 999999, time.Local), TemperatureKelvin: 2000, Brightness: 20},
 			},
 		},
 		{
 			name:      "after step 2",
 			timestamp: time.Date(2023, 1, 1, 22, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local), Temperature: 2890, Brightness: 100},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 23, 59, 59, 999999, time.Local), Temperature: 2000, Brightness: 20},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 1, 21, 0, 0, 0, time.Local), TemperatureKelvin: 2890, Brightness: 100},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 1, 23, 59, 59, 999999, time.Local), TemperatureKelvin: 2000, Brightness: 20},
 			},
 		},
 		{
 			name:      "next day",
 			timestamp: time.Date(2023, 1, 2, 0, 0, 0, 0, time.Local),
 			expected: schedule.Interval{Rooms: []string{}, Zones: []string{},
-				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 2, 0, 0, 0, 0, time.Local), Temperature: 2000, Brightness: 20},
-				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 2, 6, 0, 0, 0, time.Local), Temperature: 2500, Brightness: 20},
+				Start: schedule.IntervalStep{Time: time.Date(2023, 1, 2, 0, 0, 0, 0, time.Local), TemperatureKelvin: 2000, Brightness: 20},
+				End:   schedule.IntervalStep{Time: time.Date(2023, 1, 2, 6, 0, 0, 0, time.Local), TemperatureKelvin: 2500, Brightness: 20},
 			},
 		},
 	}
@@ -317,11 +335,11 @@ func Test_ScheduleService_FixedSchedule_GetScheduleIntervalForTime(t *testing.T)
 			assert.NotNil(t, interval)
 
 			assert.Equal(c.expected.Start.Time.Format(dateTimeFormat), interval.Start.Time.Format(dateTimeFormat))
-			assert.Equal(c.expected.Start.Temperature, interval.Start.Temperature)
+			assert.Equal(c.expected.Start.TemperatureKelvin, interval.Start.TemperatureKelvin)
 			assert.Equal(c.expected.Start.Brightness, interval.Start.Brightness)
 
 			assert.Equal(c.expected.End.Time.Format(dateTimeFormat), interval.End.Time.Format(dateTimeFormat))
-			assert.Equal(c.expected.End.Temperature, interval.End.Temperature)
+			assert.Equal(c.expected.End.TemperatureKelvin, interval.End.TemperatureKelvin)
 			assert.Equal(c.expected.End.Brightness, interval.End.Brightness)
 
 		})

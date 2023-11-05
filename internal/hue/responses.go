@@ -19,6 +19,15 @@ type HueLight struct {
 	On struct {
 		On bool `json:"on"`
 	} `json:"on"`
+	Owner struct {
+		DeviceID string `json:"rid"`
+	} `json:"owner"`
+	ColorTemperature struct {
+		MirekBounds struct {
+			Min int `json:"mirek_minimum"`
+			Max int `json:"mirek_maximum"`
+		} `json:"mirek_schema"`
+	} `json:"color_temperature"`
 }
 
 type HueDeviceGroup struct {
