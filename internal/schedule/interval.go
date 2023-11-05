@@ -1,15 +1,18 @@
 package schedule
 
 import (
+	"math"
 	"time"
+
+	"github.com/wheelibin/hugh/internal/models"
 )
 
 type IntervalStep struct {
-	Time        time.Time
-	Brightness  float64
-	Temperature int
-	// when this step should begin transitioning to the next step (percentage value for now)
-	TransitionAt int
+	Time              time.Time
+	Brightness        int
+	TemperatureKelvin int
+	TransitionAt      int // when this step should begin transitioning to the next step (percentage value for now)
+	Off               bool
 }
 
 type Interval struct {
@@ -20,12 +23,15 @@ type Interval struct {
 	Zones    []string
 }
 
-type LightState struct {
-	Brightness  float64
-	Temperature int
-}
+func (i Interval) CalculateTargetLightState(timestamp time.Time) models.LightState {
 
-func (i Interval) CalculateTargetLightState(timestamp time.Time) LightState {
+	if i.Start.Off {
+		return models.LightState{
+			Brightness:       0,
+			TemperatureMirek: 0,
+			On:               !i.Start.Off,
+		}
+	}
 
 	intervalDuration := i.End.Time.Sub(i.Start.Time)
 	intervalProgress := timestamp.Sub(i.Start.Time)
@@ -35,16 +41,23 @@ func (i Interval) CalculateTargetLightState(timestamp time.Time) LightState {
 		percentProgress = 0
 	}
 
-	temperatureDiff := i.End.Temperature - i.Start.Temperature
+	temperatureDiff := i.End.TemperatureKelvin - i.Start.TemperatureKelvin
 	temperaturePercentageValue := float64(temperatureDiff) * percentProgress
-	targetTemperature := i.Start.Temperature + int(temperaturePercentageValue)
+	targetTemperature := i.Start.TemperatureKelvin + int(temperaturePercentageValue)
 
 	brightnessDiff := i.End.Brightness - i.Start.Brightness
 	brightnessPercentageValue := float64(brightnessDiff) * percentProgress
-	targetBrightness := i.Start.Brightness + brightnessPercentageValue
+	targetBrightness := int(math.Floor(float64(i.Start.Brightness) + brightnessPercentageValue))
 
-	return LightState{
-		Brightness:  targetBrightness,
-		Temperature: targetTemperature,
+	if targetTemperature < 2000 {
+		targetTemperature = 2000
+	}
+
+	tempInMirek := int(float64(1000000) / float64(targetTemperature))
+
+	return models.LightState{
+		Brightness:       targetBrightness,
+		TemperatureMirek: tempInMirek,
+		On:               !i.Start.Off,
 	}
 }

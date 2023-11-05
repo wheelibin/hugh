@@ -1,0 +1,9 @@
+exported: true
+with-expecter: true
+dir: mocks
+outpkg: mocks
+
+packages:
+  github.com/wheelibin/hugh/internal/schedule:
+    config:
+      all: true

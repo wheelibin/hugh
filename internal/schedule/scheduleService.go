@@ -1,6 +1,7 @@
 package schedule
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -8,43 +9,31 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/nathan-osman/go-sunrise"
 	"github.com/spf13/viper"
+	"github.com/wheelibin/hugh/internal/models"
 )
 
-type Schedule struct {
-	Type       string   `json:"type"`
-	Name       string   `json:"name"`
-	Rooms      []string `json:"rooms"`
-	Zones      []string `json:"zones"`
-	SunriseMin string   `json:"sunriseMin"`
-	SunriseMax string   `json:"sunriseMax"`
-	SunsetMin  string   `json:"sunsetMin"`
-	SunsetMax  string   `json:"sunsetMax"`
-
-	Default struct {
-		Time        string  `json:"time"`
-		Temperature int     `json:"temperature"`
-		Brightness  float64 `json:"brightness"`
-	} `json:"default"`
-	DayPattern      []ScheduleDayPatternStep `json:"dayPattern"`
-	LightServiceIds []string
-}
-
-type ScheduleDayPatternStep struct {
-	Time         string  `json:"time"`
-	Temperature  int     `json:"temperature"`
-	Brightness   float64 `json:"brightness"`
-	TransitionAt int     `json:"transitionAt"`
+type lightRepo interface {
+	UpdateTargetState(scheduleName string, target models.LightState) error
 }
 
 type ScheduleService struct {
-	logger *log.Logger
+	logger    *log.Logger
+	lightRepo lightRepo
 }
 
-func NewScheduleService(logger *log.Logger) *ScheduleService {
-	return &ScheduleService{logger}
+func NewScheduleService(logger *log.Logger, lightRepo lightRepo) *ScheduleService {
+	return &ScheduleService{logger: logger, lightRepo: lightRepo}
 }
 
-func (s *ScheduleService) CalculateSunriseSunset(sch Schedule, baseDate time.Time) (time.Time, time.Time, error) {
+func (s *ScheduleService) getDayPattern(patternName string) models.DayPattern {
+	var dayPatterns map[string]models.DayPattern
+	if err := viper.UnmarshalKey("dayPatterns", &dayPatterns); err != nil {
+		s.logger.Fatalf("error reading day patterns from config, unable to continue: %v", err)
+	}
+	return dayPatterns[patternName]
+}
+
+func (s *ScheduleService) CalculateSunriseSunset(dayPattern models.DayPattern, baseDate time.Time) (time.Time, time.Time, error) {
 	latLng := strings.Split(viper.GetString("geoLocation"), ",")
 	lat, _ := strconv.ParseFloat(latLng[0], 64)
 	lng, _ := strconv.ParseFloat(latLng[1], 64)
@@ -57,10 +46,10 @@ func (s *ScheduleService) CalculateSunriseSunset(sch Schedule, baseDate time.Tim
 		"sunset", sunset.Local().Format("15:04"),
 	)
 
-	sunriseMin := timeFromConfigTimeString(sch.SunriseMin, baseDate)
-	sunriseMax := timeFromConfigTimeString(sch.SunriseMax, baseDate)
-	sunsetMin := timeFromConfigTimeString(sch.SunsetMin, baseDate)
-	sunsetMax := timeFromConfigTimeString(sch.SunsetMax, baseDate)
+	sunriseMin := TimeFromConfigTimeString(dayPattern.SunriseMin, baseDate)
+	sunriseMax := TimeFromConfigTimeString(dayPattern.SunriseMax, baseDate)
+	sunsetMin := TimeFromConfigTimeString(dayPattern.SunsetMin, baseDate)
+	sunsetMax := TimeFromConfigTimeString(dayPattern.SunsetMax, baseDate)
 
 	if sunrise.Before(sunriseMin) {
 		sunrise = sunriseMin
@@ -78,32 +67,46 @@ func (s *ScheduleService) CalculateSunriseSunset(sch Schedule, baseDate time.Tim
 
 }
 
-func (s *ScheduleService) GetScheduleIntervalForTime(sch *Schedule, t time.Time) *Interval {
+func (s *ScheduleService) GetScheduleIntervalForTime(sch models.Schedule, t time.Time) (Interval, error) {
+
+	schPattern := s.getDayPattern(sch.DayPattern)
 
 	// insert midnight->firstStep
-	if sch.DayPattern[0].Time != "startofday" {
-		sch.DayPattern = append([]ScheduleDayPatternStep{{"startofday", sch.Default.Temperature, sch.Default.Brightness, 0}}, sch.DayPattern...)
+	if schPattern.Pattern[0].Time != "startofday" {
+		schPattern.Pattern = append([]models.ScheduleDayPatternStep{
+			{
+				Time:         "startofday",
+				Temperature:  schPattern.Default.Temperature,
+				Brightness:   schPattern.Default.Brightness,
+				TransitionAt: 0,
+			},
+		}, schPattern.Pattern...)
 	}
 
 	// append lastStep->end of day
-	if sch.DayPattern[len(sch.DayPattern)-1].Time != "endofday" {
-		sch.DayPattern = append(sch.DayPattern, ScheduleDayPatternStep{"endofday", sch.Default.Temperature, sch.Default.Brightness, 0})
+	if schPattern.Pattern[len(schPattern.Pattern)-1].Time != "endofday" {
+		schPattern.Pattern = append(schPattern.Pattern, models.ScheduleDayPatternStep{
+			Time:         "endofday",
+			Temperature:  schPattern.Default.Temperature,
+			Brightness:   schPattern.Default.Brightness,
+			TransitionAt: 0,
+		})
 	}
 
 	var (
 		sunrise, sunset time.Time
 		err             error
 	)
-	if sch.Type == "dynamic" {
-		sunrise, sunset, err = s.CalculateSunriseSunset(*sch, t)
+	if schPattern.Type == "dynamic" {
+		sunrise, sunset, err = s.CalculateSunriseSunset(schPattern, t)
 		if err != nil {
 			s.logger.Fatal("error calculating sunrise and sunset", err.Error())
 		}
 	}
 
-	for i, patternStep := range sch.DayPattern {
+	for i, patternStep := range schPattern.Pattern {
 
-		if i == len(sch.DayPattern)-1 {
+		if i == len(schPattern.Pattern)-1 {
 			s.logger.Errorf("error finding current interval, invalid schedule")
 			continue
 		}
@@ -111,26 +114,38 @@ func (s *ScheduleService) GetScheduleIntervalForTime(sch *Schedule, t time.Time)
 		startStep := patternStep
 		startTime := TimeFromPattern(startStep.Time, sunrise, sunset, t)
 
-		endStep := sch.DayPattern[i+1]
+		endStep := schPattern.Pattern[i+1]
 		endTime := TimeFromPattern(endStep.Time, sunrise, sunset, t)
 
 		if t.Compare(startTime) > -1 && t.Before(endTime) {
 			// we are in this day pattern interval
 			currentInterval := Interval{
-				Start: IntervalStep{startTime, startStep.Brightness, startStep.Temperature, startStep.TransitionAt},
-				End:   IntervalStep{endTime, endStep.Brightness, endStep.Temperature, startStep.TransitionAt},
+				Start: IntervalStep{
+					Time:              startTime,
+					Brightness:        startStep.Brightness,
+					TemperatureKelvin: startStep.Temperature,
+					TransitionAt:      startStep.TransitionAt,
+					Off:               startStep.Off,
+				},
+				End: IntervalStep{
+					Time:              endTime,
+					Brightness:        endStep.Brightness,
+					TemperatureKelvin: endStep.Temperature,
+					TransitionAt:      startStep.TransitionAt,
+					Off:               endStep.Off,
+				},
 			}
 			s.logger.Info("The currently active pattern interval is", "from", currentInterval.Start, "to", currentInterval.End)
 
 			currentInterval.Rooms = sch.Rooms
 			currentInterval.Zones = sch.Zones
 
-			return &currentInterval
+			return currentInterval, nil
 
 		}
 	}
 
-	return nil
+	return Interval{}, fmt.Errorf("No interval found")
 }
 
 func TimeFromPattern(patternTime string, sunrise time.Time, sunset time.Time, baseDate time.Time) time.Time {
@@ -156,12 +171,12 @@ func TimeFromPattern(patternTime string, sunrise time.Time, sunset time.Time, ba
 	}
 
 	// time e.g 19:30
-	return timeFromConfigTimeString(patternTime, baseDate)
+	return TimeFromConfigTimeString(patternTime, baseDate)
 
 }
 
 // returns a Time object built from the supplied time string (e.g. "06:30") and a base date
-func timeFromConfigTimeString(timeString string, baseDate time.Time) time.Time {
+func TimeFromConfigTimeString(timeString string, baseDate time.Time) time.Time {
 	timeHM := strings.Split(timeString, ":")
 	hour, _ := strconv.Atoi(timeHM[0])
 	mins, _ := strconv.Atoi(timeHM[1])
