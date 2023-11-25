@@ -7,3 +7,6 @@ packages:
   github.com/wheelibin/hugh/internal/schedule:
     config:
       all: true
+  github.com/wheelibin/hugh/internal/physicalStateManager:
+    config:
+      all: true

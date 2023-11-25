@@ -13,7 +13,7 @@ import (
 )
 
 type lightStateSetter interface {
-	SetLightStateToTarget(lsID string) error
+	SetLightStateToTarget(lsID string, currentTime time.Time) error
 }
 
 type dbAccess interface {
@@ -150,7 +150,7 @@ func (m *LogicalStateManager) handleLightOnOffEvent(eventTime time.Time, lightId
 
 	if eventOn && targetOn {
 		// light has just been switched on and should be on, set to target
-		err := m.lightStateSetter.SetLightStateToTarget(lightId)
+		err := m.lightStateSetter.SetLightStateToTarget(lightId, eventTime)
 		if err != nil {
 			m.logger.Error(err)
 		}

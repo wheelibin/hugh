@@ -106,7 +106,7 @@ func (m *PhysicalStateManager) UnsubscribeFromBrideEvents() {
 	m.client.Unsubscribe(m.eventChannel)
 }
 
-func (m *PhysicalStateManager) SetLightStateToTarget(lsID string) error {
+func (m *PhysicalStateManager) SetLightStateToTarget(lsID string, currentTime time.Time) error {
 	target, err := m.dbAccess.GetLightTargetState(lsID)
 	if err != nil {
 		return err
@@ -116,11 +116,10 @@ func (m *PhysicalStateManager) SetLightStateToTarget(lsID string) error {
 
 	var skipUpdate bool
 	if !target.CurrentOnState && target.On && target.AutoOnFrom != "" && target.AutoOnTo != "" {
-		t := time.Now()
 		// if we're outside the auto on window then don't turn the light on
-		from := schedule.TimeFromConfigTimeString(target.AutoOnFrom, t)
-		to := schedule.TimeFromConfigTimeString(target.AutoOnTo, t)
-		skipUpdate = t.Before(from) || t.After(to)
+		from := schedule.TimeFromConfigTimeString(target.AutoOnFrom, currentTime)
+		to := schedule.TimeFromConfigTimeString(target.AutoOnTo, currentTime)
+		skipUpdate = currentTime.Before(from) || currentTime.After(to)
 	}
 
 	if skipUpdate {
@@ -162,8 +161,7 @@ func (m *PhysicalStateManager) SetSceneStateToTarget(ID string) error {
 	return nil
 }
 
-func (m *PhysicalStateManager) SetAllLightAndSceneStatesToTarget() error {
-
+func (m *PhysicalStateManager) SetAllLightAndSceneStatesToTarget(currentTime time.Time) error {
 	sceneIDs, err := m.dbAccess.GetAllSceneIDs()
 	if err != nil {
 		return err
@@ -183,7 +181,7 @@ func (m *PhysicalStateManager) SetAllLightAndSceneStatesToTarget() error {
 	}
 
 	for _, id := range lightIDs {
-		err := m.SetLightStateToTarget(id)
+		err := m.SetLightStateToTarget(id, currentTime)
 		if err != nil {
 			return err
 		}

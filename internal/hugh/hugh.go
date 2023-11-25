@@ -13,14 +13,14 @@ import (
 type LogicalStateManager interface {
 	AddLights(lights []models.HughLight) error
 	AddScenes(scenes []models.HughScene) error
-	UpdateAllTargetStates(schedules []models.Schedule, timestamp time.Time)
+	UpdateAllTargetStates(schedules []models.Schedule, currentTime time.Time)
 	HandleBridgeEvent(event *sse.Event)
 }
 
 type PhysicalStateManager interface {
 	// discovers lights connected to the hue bridge
 	DiscoverLights(schedules []models.Schedule) ([]models.HughLight, error)
-	SetAllLightAndSceneStatesToTarget() error
+	SetAllLightAndSceneStatesToTarget(currentTime time.Time) error
 	DiscoverScenes(schedules []models.Schedule) ([]models.HughScene, error)
 
 	SubscribeToLightUpdateEvents(chan *sse.Event)
@@ -120,7 +120,7 @@ func (h *Hugh) Run(ctx context.Context) {
 }
 
 func (h *Hugh) updateAll() {
-	err := h.physicalStateManager.SetAllLightAndSceneStatesToTarget()
+	err := h.physicalStateManager.SetAllLightAndSceneStatesToTarget(time.Now())
 	if err != nil {
 		h.logger.Error(err)
 	}
