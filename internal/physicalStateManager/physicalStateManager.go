@@ -14,8 +14,8 @@ import (
 	"github.com/wheelibin/hugh/internal/schedule"
 )
 
-type lightManager interface {
-	DiscoverLights(schedules []models.Schedule) ([]*models.HughLight, error)
+type hueApiService interface {
+	DiscoverLights(schedules []models.Schedule) ([]models.HughLight, error)
 	GetScenes() ([]hue.HueScene, error)
 	UpdateLightState(lsID string, targetState models.LightState) error
 	UpdateSceneState(ID string, targetState models.LightState) error
@@ -31,9 +31,9 @@ type dbAccess interface {
 }
 
 type PhysicalStateManager struct {
-	logger       *log.Logger
-	lightManager lightManager
-	dbAccess     dbAccess
+	logger        *log.Logger
+	hueApiService hueApiService
+	dbAccess      dbAccess
 
 	client       *sse.Client
 	eventChannel chan *sse.Event
@@ -41,22 +41,22 @@ type PhysicalStateManager struct {
 
 func NewPhysicalStateManager(
 	logger *log.Logger,
-	lightManager lightManager,
+	lightManager hueApiService,
 	dbAccess dbAccess,
 ) *PhysicalStateManager {
 	return &PhysicalStateManager{
-		logger:       logger,
-		lightManager: lightManager,
-		dbAccess:     dbAccess,
+		logger:        logger,
+		hueApiService: lightManager,
+		dbAccess:      dbAccess,
 	}
 }
 
-func (m *PhysicalStateManager) DiscoverLights(schedules []models.Schedule) ([]*models.HughLight, error) {
-	return m.lightManager.DiscoverLights(schedules)
+func (m *PhysicalStateManager) DiscoverLights(schedules []models.Schedule) ([]models.HughLight, error) {
+	return m.hueApiService.DiscoverLights(schedules)
 }
 
 func (m *PhysicalStateManager) DiscoverScenes(schedules []models.Schedule) ([]models.HughScene, error) {
-	scenes, err := m.lightManager.GetScenes()
+	scenes, err := m.hueApiService.GetScenes()
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (m *PhysicalStateManager) SetLightStateToTarget(lsID string) error {
 		return nil
 	}
 
-	err = m.lightManager.UpdateLightState(lsID, target)
+	err = m.hueApiService.UpdateLightState(lsID, target)
 	if err != nil {
 		if err.Error() == "unreachable" {
 			err := m.dbAccess.SetLightUnreachable(lsID)
@@ -154,7 +154,7 @@ func (m *PhysicalStateManager) SetSceneStateToTarget(ID string) error {
 		return err
 	}
 
-	err = m.lightManager.UpdateSceneState(ID, target)
+	err = m.hueApiService.UpdateSceneState(ID, target)
 	if err != nil {
 		return err
 	}

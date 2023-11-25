@@ -11,7 +11,7 @@ import (
 )
 
 type LogicalStateManager interface {
-	AddLights(lights []*models.HughLight) error
+	AddLights(lights []models.HughLight) error
 	AddScenes(scenes []models.HughScene) error
 	UpdateAllTargetStates(schedules []models.Schedule, timestamp time.Time)
 	HandleBridgeEvent(event *sse.Event)
@@ -19,7 +19,7 @@ type LogicalStateManager interface {
 
 type PhysicalStateManager interface {
 	// discovers lights connected to the hue bridge
-	DiscoverLights(schedules []models.Schedule) ([]*models.HughLight, error)
+	DiscoverLights(schedules []models.Schedule) ([]models.HughLight, error)
 	SetAllLightAndSceneStatesToTarget() error
 	DiscoverScenes(schedules []models.Schedule) ([]models.HughScene, error)
 

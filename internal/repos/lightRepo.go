@@ -65,7 +65,7 @@ func NewLightRepo(logger *log.Logger, db *sql.DB) (*LightRepo, error) {
 	return &LightRepo{logger: logger, db: db}, nil
 }
 
-func (r *LightRepo) Add(lights []*models.HughLight) error {
+func (r *LightRepo) Add(lights []models.HughLight) error {
 	tx, _ := r.db.Begin()
 	for _, light := range lights {
 		_, err := tx.Exec(

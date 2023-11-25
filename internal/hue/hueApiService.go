@@ -110,10 +110,10 @@ func (h *HueAPIService) GetScenes() ([]HueScene, error) {
 	return respBody.Data, nil
 }
 
-func (h *HueAPIService) DiscoverLights(schedules []models.Schedule) ([]*models.HughLight, error) {
+func (h *HueAPIService) DiscoverLights(schedules []models.Schedule) ([]models.HughLight, error) {
 	allGroups, _ := h.GetAllGroups()
 
-	lights := []*models.HughLight{}
+	lights := []models.HughLight{}
 
 	for _, schedule := range schedules {
 
@@ -142,14 +142,14 @@ func (h *HueAPIService) DiscoverLights(schedules []models.Schedule) ([]*models.H
 	}
 
 	// de-dupe
-	uniqueLights := lo.UniqBy(lights, func(l *models.HughLight) string {
+	uniqueLights := lo.UniqBy(lights, func(l models.HughLight) string {
 		return l.LightServiceId
 	})
 
 	return uniqueLights, nil
 }
 
-func (h *HueAPIService) GetLightsForGroup(group models.HughGroup) ([]*models.HughLight, error) {
+func (h *HueAPIService) GetLightsForGroup(group models.HughGroup) ([]models.HughLight, error) {
 
 	var lightServiceIds []string
 
@@ -184,13 +184,13 @@ func (h *HueAPIService) GetLightsForGroup(group models.HughGroup) ([]*models.Hug
 		}
 	}
 
-	groupLights := lo.FilterMap(lightServiceIds, func(lightServiceId string, _ int) (*models.HughLight, bool) {
+	groupLights := lo.FilterMap(lightServiceIds, func(lightServiceId string, _ int) (models.HughLight, bool) {
 
 		// get the light
 		light, err := h.GetLight(lightServiceId)
 		if err != nil {
 			h.logger.Error(err)
-			return nil, false
+			return models.HughLight{}, false
 		}
 
 		return light, true
@@ -201,29 +201,29 @@ func (h *HueAPIService) GetLightsForGroup(group models.HughGroup) ([]*models.Hug
 
 }
 
-func (h *HueAPIService) GetLight(id string) (*models.HughLight, error) {
+func (h *HueAPIService) GetLight(id string) (models.HughLight, error) {
 
 	// get the light
 	body, err := h.GET(fmt.Sprintf("/clip/v2/resource/light/%s", id))
 	if err != nil {
-		return nil, err
+		return models.HughLight{}, err
 	}
 	lresp := LightResponse{}
 	if err := json.Unmarshal(body, &lresp); err != nil {
 		h.logger.Error(err)
-		return nil, err
+		return models.HughLight{}, err
 	}
 	light := lresp.Data[0]
 
 	// get the device
 	body, err = h.GET(fmt.Sprintf("/clip/v2/resource/device/%s", light.Owner.DeviceID))
 	if err != nil {
-		return nil, err
+		return models.HughLight{}, err
 	}
 	dresp := DevicesResponse{}
 	if err := json.Unmarshal(body, &dresp); err != nil {
 		h.logger.Error(err)
-		return nil, err
+		return models.HughLight{}, err
 	}
 	device := dresp.Data[0]
 
@@ -232,7 +232,7 @@ func (h *HueAPIService) GetLight(id string) (*models.HughLight, error) {
 		return s.RType == "zigbee_connectivity"
 	})
 
-	return &models.HughLight{
+	return models.HughLight{
 		Id:                       light.Id,
 		Name:                     light.Metadata.Name,
 		DeviceID:                 light.Owner.DeviceID,

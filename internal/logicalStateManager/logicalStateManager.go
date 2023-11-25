@@ -17,7 +17,7 @@ type lightStateSetter interface {
 }
 
 type dbAccess interface {
-	Add(lights []*models.HughLight) error
+	Add(lights []models.HughLight) error
 	AddScenes(scenes []models.HughScene) error
 	SetLightOnState(lsID string, on bool) error
 	SetLightBrightnessOverride(lsID string, brightness int, targetBrightness int) error
@@ -46,7 +46,7 @@ func NewLogicalStateManager(logger *log.Logger, dbUpdater dbAccess, intervalGett
 	return &LogicalStateManager{logger: logger, dbAccess: dbUpdater, intervalGetter: intervalGetter, lightStateSetter: lightStateSetter}
 }
 
-func (m *LogicalStateManager) AddLights(lights []*models.HughLight) error {
+func (m *LogicalStateManager) AddLights(lights []models.HughLight) error {
 	return m.dbAccess.Add(lights)
 }
 
