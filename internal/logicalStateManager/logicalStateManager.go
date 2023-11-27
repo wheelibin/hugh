@@ -29,6 +29,7 @@ type dbAccess interface {
 	IsScheduledLight(lsID string) (bool, error)
 	GetLightServiceIDForZigbeeID(zigbeeID string) (string, error)
 	GetLightLastUpdate(lsID string) (*time.Time, error)
+	ClearLightOverrides(lsID string) error
 }
 
 type intervalGetter interface {
@@ -168,6 +169,11 @@ func (m *LogicalStateManager) handleLightChangeEvent(changeType string, eventTim
 
 	if isEqualWithinTolerance(changeType, eventValue, targetValue) {
 		m.logger.Debugf("redundant light %s update received, it was probably triggered by a hugh update", changeType)
+		// clear overrides for light
+		err := m.dbAccess.ClearLightOverrides(lightId)
+		if err != nil {
+			m.logger.Error(err)
+		}
 		return
 	}
 

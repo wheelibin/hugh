@@ -153,21 +153,13 @@ func (r *LightRepo) SetLightUnreachable(lsID string) error {
 	// when setting light to unreachable, also clear any overrides as they are now redundant
 	_, err := r.db.Exec(`
     UPDATE light 
-    SET unreachable = true,
-      -- also clear manual override fields
-        override_brightness = null, 
-        override_colour_temp = null,
-        override_target_brightness = null, 
-        override_target_colour_temp = null, 
-        override_target_on_state = null, 
-        override_brightness = null, 
-        override_time = null,
-        override_on_state = null
+    SET unreachable = true
     WHERE serviceid_light = $1`, lsID)
 	if err != nil {
 		return fmt.Errorf("Error setting light (%s) to unreachable: %w", lsID, err)
 	}
-	return nil
+
+	return r.ClearLightOverrides(lsID)
 }
 
 func (r *LightRepo) UpdateTargetState(scheduleName string, target models.LightState) error {
@@ -361,22 +353,14 @@ func (r *LightRepo) MarkLightAsUpdated(lsID string) error {
         last_update_brightness = target_brightness,
         last_update_colour_temp = target_colour_temp,
         last_update_on_state = target_on_state,
-        unreachable = null, 
-        -- also clear manual override fields
-        override_brightness = null, 
-        override_colour_temp = null,
-        override_target_brightness = null, 
-        override_target_colour_temp = null, 
-        override_target_on_state = null, 
-        override_brightness = null, 
-        override_time = null,
-        override_on_state = null
+        unreachable = null
     WHERE serviceid_light = $2
   `, time.Now(), lsID)
 	if err != nil {
 		return fmt.Errorf("Error marking light (%s) as updated: %w", lsID, err)
 	}
-	return nil
+
+	return r.ClearLightOverrides(lsID)
 
 }
 
@@ -393,4 +377,24 @@ func (r *LightRepo) GetLightLastUpdate(lsID string) (*time.Time, error) {
 		}
 	}
 	return &lastUpdated, nil
+}
+
+func (r *LightRepo) ClearLightOverrides(lsID string) error {
+	_, err := r.db.Exec(`
+    UPDATE light 
+    SET override_brightness = null, 
+        override_colour_temp = null,
+        override_target_brightness = null, 
+        override_target_colour_temp = null, 
+        override_target_on_state = null, 
+        override_brightness = null, 
+        override_time = null,
+        override_on_state = null
+    WHERE serviceid_light = $1
+  `, lsID)
+	if err != nil {
+		return fmt.Errorf("Error clearing overrides for light (%s): %w", lsID, err)
+	}
+	return nil
+
 }
