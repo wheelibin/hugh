@@ -298,8 +298,6 @@ func (r *LightRepo) GetAllControllingLightIDs() ([]string, error) {
          OR target_colour_temp != coalesce(last_update_colour_temp, -1) 
          OR target_on_state    != coalesce(last_update_on_state, -1)
        )
-      -- and is reachable
-      AND unreachable IS NULL
 
       AND (
         -- and the light doesn't have an override 
