@@ -65,10 +65,12 @@ func Test_CalculateSunriseSunset(t *testing.T) {
 		},
 	}
 
-	mockLightRepo := mocks.NewMocklightRepo(t)
+	mockLightRepo := mocks.NewMockScheduleLightRepo(t)
 
 	for _, c := range tests {
+		c := c
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			srv := schedule.NewScheduleService(log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel}), mockLightRepo)
 			sunrise, sunset, _ := srv.CalculateSunriseSunset(c.pattern, baseDate)
 			if c.sunrise != "" {
@@ -134,7 +136,7 @@ func Test_ScheduleService_DynamicSchedule_GetScheduleIntervalForTime(t *testing.
 	dayPatterns["myPattern"] = dp
 	viper.Set("dayPatterns", dayPatterns)
 
-	mockLightRepo := mocks.NewMocklightRepo(t)
+	mockLightRepo := mocks.NewMockScheduleLightRepo(t)
 
 	srv := schedule.NewScheduleService(log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel}), mockLightRepo)
 	var sch models.Schedule
@@ -219,7 +221,9 @@ func Test_ScheduleService_DynamicSchedule_GetScheduleIntervalForTime(t *testing.
 	}
 
 	for _, c := range tests {
+		c := c
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			interval, _ := srv.GetScheduleIntervalForTime(sch, c.timestamp)
 
 			assert.Equal(c.expected.Start.Time.Format(dateTimeFormat), interval.Start.Time.Format(dateTimeFormat), c.name)

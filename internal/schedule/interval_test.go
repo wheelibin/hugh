@@ -141,7 +141,9 @@ func Test_CalculateTargetLightState(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			ls := test.interval.CalculateTargetLightState(test.timestamp)
 			assert.Equal(t, test.expectedTemperature, ls.TemperatureMirek)
 			assert.EqualValues(t, test.expectedBrightness, ls.Brightness)

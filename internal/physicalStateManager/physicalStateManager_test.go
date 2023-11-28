@@ -19,12 +19,12 @@ import (
 func Test_DiscoverLights(t *testing.T) {
 
 	t.Run("should return lights returned from hue service", func(t *testing.T) {
-
+		t.Parallel()
 		// arrange
 		foundLights := []models.HughLight{{Id: "001"}, {Id: "002"}}
-		mockHueService := mocks.NewMockhueApiService(t)
+		mockHueService := mocks.NewMockPhysicalstatemanagerHueApiService(t)
 		mockHueService.On("DiscoverLights", mock.Anything).Return(foundLights, nil)
-		mockDBAccess := mocks.NewMockdbAccess(t)
+		mockDBAccess := mocks.NewMockPhysicalstatemanagerDbAccess(t)
 		logger := log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel})
 
 		// act
@@ -42,6 +42,7 @@ func Test_DiscoverLights(t *testing.T) {
 func Test_DiscoverScenes(t *testing.T) {
 
 	t.Run("should return only scenes for defined schedules", func(t *testing.T) {
+		t.Parallel()
 
 		// arrange
 		foundScenes := []hue.HueScene{{
@@ -78,9 +79,9 @@ func Test_DiscoverScenes(t *testing.T) {
 				Actions: []hue.HueSceneAction{},
 			}}
 
-		mockHueService := mocks.NewMockhueApiService(t)
+		mockHueService := mocks.NewMockPhysicalstatemanagerHueApiService(t)
 		mockHueService.On("GetScenes", mock.Anything).Return(foundScenes, nil)
-		mockDBAccess := mocks.NewMockdbAccess(t)
+		mockDBAccess := mocks.NewMockPhysicalstatemanagerDbAccess(t)
 		logger := log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel})
 		psm := physicalstatemanager.NewPhysicalStateManager(logger, mockHueService, mockDBAccess)
 
@@ -100,10 +101,11 @@ func Test_SetLightStateToTarget(t *testing.T) {
 	lsID := "123456"
 
 	t.Run("should call hue service to update the light", func(t *testing.T) {
+		t.Parallel()
 
 		// arrange
-		mockDBAccess := mocks.NewMockdbAccess(t)
-		mockHueService := mocks.NewMockhueApiService(t)
+		mockDBAccess := mocks.NewMockPhysicalstatemanagerDbAccess(t)
+		mockHueService := mocks.NewMockPhysicalstatemanagerHueApiService(t)
 
 		// expectations
 		mockDBAccess.On("GetLightTargetState", lsID).Return(models.LightState{Brightness: 100, TemperatureMirek: 500, On: true}, nil)
@@ -119,10 +121,11 @@ func Test_SetLightStateToTarget(t *testing.T) {
 	})
 
 	t.Run("error getting target: should do nothing and return the error", func(t *testing.T) {
+		t.Parallel()
 
 		// arrange
-		mockDBAccess := mocks.NewMockdbAccess(t)
-		mockHueService := mocks.NewMockhueApiService(t)
+		mockDBAccess := mocks.NewMockPhysicalstatemanagerDbAccess(t)
+		mockHueService := mocks.NewMockPhysicalstatemanagerHueApiService(t)
 
 		// expectations
 		mockDBAccess.On("GetLightTargetState", lsID).Return(models.LightState{Brightness: 100, TemperatureMirek: 500, On: true}, fmt.Errorf("an error"))
@@ -139,10 +142,11 @@ func Test_SetLightStateToTarget(t *testing.T) {
 	})
 
 	t.Run("light unreachable: should set as unreachable in db", func(t *testing.T) {
+		t.Parallel()
 
 		// arrange
-		mockDBAccess := mocks.NewMockdbAccess(t)
-		mockHueService := mocks.NewMockhueApiService(t)
+		mockDBAccess := mocks.NewMockPhysicalstatemanagerDbAccess(t)
+		mockHueService := mocks.NewMockPhysicalstatemanagerHueApiService(t)
 
 		// expectations
 		mockDBAccess.On("GetLightTargetState", lsID).Return(models.LightState{Brightness: 100, TemperatureMirek: 500, On: true}, nil)
@@ -159,10 +163,11 @@ func Test_SetLightStateToTarget(t *testing.T) {
 	})
 
 	t.Run("light currently off, target on, outside autoOn window: should skip light update", func(t *testing.T) {
+		t.Parallel()
 
 		// arrange
-		mockDBAccess := mocks.NewMockdbAccess(t)
-		mockHueService := mocks.NewMockhueApiService(t)
+		mockDBAccess := mocks.NewMockPhysicalstatemanagerDbAccess(t)
+		mockHueService := mocks.NewMockPhysicalstatemanagerHueApiService(t)
 
 		// expectations
 		mockDBAccess.On("GetLightTargetState", lsID).Return(models.LightState{
@@ -185,10 +190,11 @@ func Test_SetLightStateToTarget(t *testing.T) {
 	})
 
 	t.Run("light currently off, target on, inside autoOn window: should perform light update", func(t *testing.T) {
+		t.Parallel()
 
 		// arrange
-		mockDBAccess := mocks.NewMockdbAccess(t)
-		mockHueService := mocks.NewMockhueApiService(t)
+		mockDBAccess := mocks.NewMockPhysicalstatemanagerDbAccess(t)
+		mockHueService := mocks.NewMockPhysicalstatemanagerHueApiService(t)
 
 		// expectations
 		mockDBAccess.On("GetLightTargetState", lsID).Return(models.LightState{
@@ -211,10 +217,11 @@ func Test_SetLightStateToTarget(t *testing.T) {
 	})
 
 	t.Run("light currently off, target off: should perform light update", func(t *testing.T) {
+		t.Parallel()
 
 		// arrange
-		mockDBAccess := mocks.NewMockdbAccess(t)
-		mockHueService := mocks.NewMockhueApiService(t)
+		mockDBAccess := mocks.NewMockPhysicalstatemanagerDbAccess(t)
+		mockHueService := mocks.NewMockPhysicalstatemanagerHueApiService(t)
 
 		// expectations
 		mockDBAccess.On("GetLightTargetState", lsID).Return(models.LightState{
@@ -235,10 +242,11 @@ func Test_SetLightStateToTarget(t *testing.T) {
 	})
 
 	t.Run("light currently on, target off: should perform light update", func(t *testing.T) {
+		t.Parallel()
 
 		// arrange
-		mockDBAccess := mocks.NewMockdbAccess(t)
-		mockHueService := mocks.NewMockhueApiService(t)
+		mockDBAccess := mocks.NewMockPhysicalstatemanagerDbAccess(t)
+		mockHueService := mocks.NewMockPhysicalstatemanagerHueApiService(t)
 
 		// expectations
 		mockDBAccess.On("GetLightTargetState", lsID).Return(models.LightState{
@@ -263,10 +271,11 @@ func Test_SetSceneStateToTarget(t *testing.T) {
 	id := "123456"
 
 	t.Run("should call hue service to update the scene", func(t *testing.T) {
+		t.Parallel()
 
 		// arrange
-		mockDBAccess := mocks.NewMockdbAccess(t)
-		mockHueService := mocks.NewMockhueApiService(t)
+		mockDBAccess := mocks.NewMockPhysicalstatemanagerDbAccess(t)
+		mockHueService := mocks.NewMockPhysicalstatemanagerHueApiService(t)
 
 		// expectations
 		mockDBAccess.On("GetSceneTargetState", id).Return(models.LightState{Brightness: 100, TemperatureMirek: 500, On: true}, nil)
@@ -281,10 +290,11 @@ func Test_SetSceneStateToTarget(t *testing.T) {
 	})
 
 	t.Run("error getting target: should do nothing and return the error", func(t *testing.T) {
+		t.Parallel()
 
 		// arrange
-		mockDBAccess := mocks.NewMockdbAccess(t)
-		mockHueService := mocks.NewMockhueApiService(t)
+		mockDBAccess := mocks.NewMockPhysicalstatemanagerDbAccess(t)
+		mockHueService := mocks.NewMockPhysicalstatemanagerHueApiService(t)
 
 		// expectations
 		mockDBAccess.On("GetSceneTargetState", id).Return(models.LightState{Brightness: 100, TemperatureMirek: 500, On: true}, fmt.Errorf("an error"))
@@ -295,28 +305,9 @@ func Test_SetSceneStateToTarget(t *testing.T) {
 
 		// act
 		err := psm.SetSceneStateToTarget(id)
+
+		// assert
 		assert.Equal(t, "an error", err.Error())
 
 	})
 }
-
-// func Test_SetAllLightAndSceneStatesToTarget(t *testing.T) {
-// 	t.Run("", func(t *testing.T) {
-//
-// 		// arrange
-// 		mockDBAccess := mocks.NewMockdbAccess(t)
-// 		mockHueService := mocks.NewMockhueApiService(t)
-//
-// 		// expectations
-// 		mockDBAccess.On("GetSceneTargetState", id).Return(models.LightState{Brightness: 100, TemperatureMirek: 500, On: true}, fmt.Errorf("an error"))
-// 		mockHueService.AssertNotCalled(t, "UpdateSceneState", id, mock.Anything)
-//
-// 		logger := log.NewWithOptions(os.Stderr, log.Options{Level: log.FatalLevel})
-// 		psm := physicalstatemanager.NewPhysicalStateManager(logger, mockHueService, mockDBAccess)
-//
-// 		// act
-// 		err := psm.SetSceneStateToTarget(id)
-// 		assert.Equal(t, "an error", err.Error())
-//
-// 	})
-// }

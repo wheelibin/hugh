@@ -2,11 +2,16 @@ exported: true
 with-expecter: true
 dir: mocks
 outpkg: mocks
+mockname: "Mock{{.PackageName | camelcase }}{{ .InterfaceName | camelcase }}"
+filename: "mock_{{.PackageName | camelcase }}_{{.InterfaceName | camelcase }}.go"
 
 packages:
   github.com/wheelibin/hugh/internal/schedule:
     config:
       all: true
   github.com/wheelibin/hugh/internal/physicalStateManager:
+    config:
+      all: true
+  github.com/wheelibin/hugh/internal/logicalStateManager:
     config:
       all: true
