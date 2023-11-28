@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/log"
 	sse "github.com/r3labs/sse/v2"
 	"github.com/spf13/viper"
+	"github.com/wheelibin/hugh/internal/concurrency"
 	"github.com/wheelibin/hugh/internal/hue"
 	"github.com/wheelibin/hugh/internal/models"
 	"github.com/wheelibin/hugh/internal/schedule"
@@ -167,26 +168,20 @@ func (m *PhysicalStateManager) SetAllLightAndSceneStatesToTarget(currentTime tim
 		return err
 	}
 
-	for _, id := range sceneIDs {
-		err := m.SetSceneStateToTarget(id)
-		if err != nil {
-			return err
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	tw := concurrency.NewThrottledWorker(func(arg string) error {
+		return m.SetSceneStateToTarget(arg)
+	})
+	tw.Run(sceneIDs)
 
 	lightIDs, err := m.dbAccess.GetAllControllingLightIDs()
 	if err != nil {
 		return err
 	}
 
-	for _, id := range lightIDs {
-		err := m.SetLightStateToTarget(id, currentTime)
-		if err != nil {
-			return err
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	tw = concurrency.NewThrottledWorker(func(arg string) error {
+		return m.SetLightStateToTarget(arg, currentTime)
+	})
+	tw.Run(lightIDs)
 
 	return nil
 
