@@ -88,7 +88,7 @@ func (m *LogicalStateManager) HandleBridgeEvent(event *sse.Event) {
 						if err != nil {
 							m.logger.Error(err)
 						}
-						m.handleLightOnOffEvent(evt.CreationTime, lsID, true, currentLightTargetState.On)
+						m.HandleLightOnOffEvent(evt.CreationTime, lsID, true, currentLightTargetState.On)
 						continue
 					}
 
@@ -111,18 +111,18 @@ func (m *LogicalStateManager) HandleBridgeEvent(event *sse.Event) {
 
 					// light has been switched on/off
 					if eventData.On != nil {
-						m.handleLightOnOffEvent(evt.CreationTime, eventData.Id, eventData.On.On, currentLightTargetState.On)
+						m.HandleLightOnOffEvent(evt.CreationTime, eventData.Id, eventData.On.On, currentLightTargetState.On)
 						continue
 					}
 
 					// brightness change event
 					if eventData.Dimming != nil {
-						m.handleLightChangeEvent(constants.ChangeTypeBrightness, evt.CreationTime, eventData.Id, int(math.Round(eventData.Dimming.Brightness)), currentLightTargetState.Brightness)
+						m.HandleLightChangeEvent(constants.ChangeTypeBrightness, evt.CreationTime, eventData.Id, int(math.Round(eventData.Dimming.Brightness)), currentLightTargetState.Brightness)
 					}
 
 					// colour temp change event
 					if eventData.ColorTemperature != nil {
-						m.handleLightChangeEvent(constants.ChangeTypeColourTemp, evt.CreationTime, eventData.Id, eventData.ColorTemperature.Mirek, currentLightTargetState.TemperatureMirek)
+						m.HandleLightChangeEvent(constants.ChangeTypeColourTemp, evt.CreationTime, eventData.Id, eventData.ColorTemperature.Mirek, currentLightTargetState.TemperatureMirek)
 					}
 				}
 
@@ -133,7 +133,7 @@ func (m *LogicalStateManager) HandleBridgeEvent(event *sse.Event) {
 	}
 }
 
-func (m *LogicalStateManager) handleLightOnOffEvent(eventTime time.Time, lightId string, eventOn bool, targetOn bool) {
+func (m *LogicalStateManager) HandleLightOnOffEvent(eventTime time.Time, lightId string, eventOn bool, targetOn bool) {
 	m.logger.Debugf("(%s): event on: %t, target: %t", lightId, eventOn, targetOn)
 
 	if eventOn == targetOn && m.eventInsideHughUpdateWindow(eventTime, lightId) {
@@ -159,7 +159,7 @@ func (m *LogicalStateManager) handleLightOnOffEvent(eventTime time.Time, lightId
 	}
 }
 
-func (m *LogicalStateManager) handleLightChangeEvent(changeType string, eventTime time.Time, lightId string, eventValue int, targetValue int) {
+func (m *LogicalStateManager) HandleLightChangeEvent(changeType string, eventTime time.Time, lightId string, eventValue int, targetValue int) {
 	m.logger.Debugf("(%s): event %s: %v, target: %v", lightId, changeType, eventValue, targetValue)
 
 	if eventValue == 0 {

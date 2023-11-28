@@ -53,22 +53,23 @@ type HughScene struct {
 
 // an event received from the event stream
 type Event struct {
-	CreationTime time.Time `json:"creationtime"`
-	Data         []struct {
-		Id string `json:"id"`
-		On *struct {
-			On bool `json:"on"`
-		} `json:"on"`
-		Dimming *struct {
-			Brightness float64 `json:"brightness"`
-		} `json:"dimming"`
-		ColorTemperature *struct {
-			Mirek int `json:"mirek"`
-		} `json:"color_temperature"`
-		Type   string `json:"type"`
-		Status string `json:"status"`
-	} `json:"data"`
-	Type string `json:"type"`
+	CreationTime time.Time   `json:"creationtime"`
+	Data         []EventData `json:"data"`
+	Type         string      `json:"type"`
+}
+type EventData struct {
+	Id string `json:"id"`
+	On *struct {
+		On bool `json:"on"`
+	} `json:"on"`
+	Dimming *struct {
+		Brightness float64 `json:"brightness"`
+	} `json:"dimming"`
+	ColorTemperature *struct {
+		Mirek int `json:"mirek"`
+	} `json:"color_temperature"`
+	Type   string `json:"type"`
+	Status string `json:"status"`
 }
 
 type Schedule struct {
